@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 
 type SourceRow = {
   id: string;
-  type: "hermes" | "json" | "http" | "text" | "hermes-sessions";
+  type: "hermes" | "json" | "http" | "text" | "hermes-sessions" | "url" | "pdf";
   name: string;
   enabled: boolean;
   removable: boolean;
@@ -29,6 +29,8 @@ const TYPE_LABEL: Record<SourceRow["type"], string> = {
   http: "HTTP API",
   text: "Free text",
   "hermes-sessions": "Hermes sessions (FTS5)",
+  url: "Web page",
+  pdf: "PDF",
 };
 
 export default function SourcesDrawer({ open, onCloseAction, onChangedAction }: Props) {
@@ -217,7 +219,7 @@ function SourceCard({
           >
             {row.enabled ? "On" : "Off"}
           </button>
-          {row.type === "http" ? (
+          {row.type === "http" || row.type === "url" || row.type === "pdf" ? (
             <button
               onClick={onRefetchAction}
               className="text-[10px] text-zinc-500 hover:text-zinc-200"
@@ -246,7 +248,9 @@ function AddSourceForm({
   onCancelAction: () => void;
   onCreatedAction: () => void;
 }) {
-  const [type, setType] = useState<"text" | "json" | "http" | "hermes-sessions">("text");
+  const [type, setType] = useState<
+    "text" | "json" | "http" | "hermes-sessions" | "url" | "pdf"
+  >("text");
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
@@ -255,12 +259,14 @@ function AddSourceForm({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const isUrlType = type === "http" || type === "url" || type === "pdf";
+
   const submit = async () => {
     setSubmitting(true);
     setErr(null);
     try {
       const body: Record<string, unknown> = { type, name: name.trim() || autoName(type) };
-      if (type === "http") {
+      if (isUrlType) {
         body.url = url.trim();
         if (auth.trim()) body.authHeader = auth.trim().startsWith("Bearer ") ? auth.trim() : `Bearer ${auth.trim()}`;
       } else if (type === "hermes-sessions") {
@@ -298,7 +304,7 @@ function AddSourceForm({
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {(["text", "json", "http", "hermes-sessions"] as const).map((t) => (
+        {(["text", "json", "url", "pdf", "http", "hermes-sessions"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setType(t)}
@@ -321,12 +327,18 @@ function AddSourceForm({
         className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[var(--accent-soft)]"
       />
 
-      {type === "http" ? (
+      {isUrlType ? (
         <>
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://api.example.com/me/memories"
+            placeholder={
+              type === "pdf"
+                ? "https://arxiv.org/pdf/2401.00001.pdf"
+                : type === "url"
+                  ? "https://example.com/article"
+                  : "https://api.example.com/me/memories"
+            }
             className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[var(--accent-soft)]"
           />
           <input
@@ -336,8 +348,22 @@ function AddSourceForm({
             className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[var(--accent-soft)]"
           />
           <p className="mb-2 text-[11px] text-zinc-500">
-            Endpoint must return JSON shaped like{" "}
-            <code className="text-zinc-400">{`{ chips: [{ raw, label?, id? }, ...] }`}</code>.
+            {type === "http" ? (
+              <>
+                Endpoint must return JSON shaped like{" "}
+                <code className="text-zinc-400">{`{ chips: [{ raw, label?, id? }, ...] }`}</code>.
+              </>
+            ) : type === "url" ? (
+              <>
+                Fetches the page, strips HTML, extracts up to 12 short snippets as chips. Best on
+                article-style pages; SPAs may produce noise.
+              </>
+            ) : (
+              <>
+                Downloads the PDF and extracts up to 12 text snippets. URL must serve{" "}
+                <code className="text-zinc-400">application/pdf</code>. Max 8&nbsp;MB.
+              </>
+            )}
           </p>
         </>
       ) : type === "hermes-sessions" ? (
@@ -379,7 +405,7 @@ function AddSourceForm({
         onClick={submit}
         disabled={
           submitting ||
-          (type === "http"
+          (isUrlType
             ? !url.trim()
             : type === "hermes-sessions"
               ? !query.trim()

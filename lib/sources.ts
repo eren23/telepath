@@ -6,7 +6,14 @@ import { chipsFromUserDoc, readUser } from "@/lib/hermes-memory";
 const SOURCES_PATH = path.join(process.cwd(), "data", "sources.json");
 const SEED_SPIDER = path.join(process.cwd(), "data", "spiderchat-memories.json");
 
-export type SourceType = "hermes" | "json" | "http" | "text" | "hermes-sessions";
+export type SourceType =
+  | "hermes"
+  | "json"
+  | "http"
+  | "text"
+  | "hermes-sessions"
+  | "url"
+  | "pdf";
 
 export type SourceConfig = {
   id: string;
@@ -193,6 +200,77 @@ async function fetchHttpChips(s: SourceConfig): Promise<MemoryChip[]> {
   return chipsFromJsonContent(text, s.id);
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  "#39": "'",
+  "#x27": "'",
+  "#x2F": "/",
+};
+
+function stripHtml(html: string): string {
+  let out = html;
+  out = out.replace(/<script\b[\s\S]*?<\/script>/gi, " ");
+  out = out.replace(/<style\b[\s\S]*?<\/style>/gi, " ");
+  out = out.replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ");
+  out = out.replace(/<!--[\s\S]*?-->/g, " ");
+  out = out.replace(/<[^>]+>/g, " ");
+  out = out.replace(/&(#?[a-zA-Z0-9]+);/g, (_, ent: string) => HTML_ENTITIES[ent] ?? " ");
+  out = out.replace(/\s+/g, " ").trim();
+  return out;
+}
+
+const MAX_REMOTE_BYTES = 8 * 1024 * 1024;
+
+async function fetchUrlChips(s: SourceConfig): Promise<MemoryChip[]> {
+  if (!s.url) return [];
+  const headers: Record<string, string> = {
+    accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+    "user-agent": "TelepathBot/0.1 (+https://github.com/eren23/visualizer_hermes)",
+  };
+  if (s.authHeader) headers["authorization"] = s.authHeader;
+  const r = await fetch(s.url, { headers, cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status} on ${s.url}`);
+  const buf = await r.arrayBuffer();
+  if (buf.byteLength > MAX_REMOTE_BYTES) {
+    throw new Error(`response too large (${buf.byteLength} bytes)`);
+  }
+  const ctype = (r.headers.get("content-type") ?? "").toLowerCase();
+  const text =
+    ctype.includes("text/plain")
+      ? new TextDecoder("utf-8", { fatal: false }).decode(buf)
+      : stripHtml(new TextDecoder("utf-8", { fatal: false }).decode(buf));
+  return chipsFromText(text, s.id);
+}
+
+async function fetchPdfChips(s: SourceConfig): Promise<MemoryChip[]> {
+  if (!s.url) return [];
+  const headers: Record<string, string> = {
+    accept: "application/pdf,*/*;q=0.5",
+    "user-agent": "TelepathBot/0.1 (+https://github.com/eren23/visualizer_hermes)",
+  };
+  if (s.authHeader) headers["authorization"] = s.authHeader;
+  const r = await fetch(s.url, { headers, cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status} on ${s.url}`);
+  const buf = await r.arrayBuffer();
+  if (buf.byteLength > MAX_REMOTE_BYTES) {
+    throw new Error(`pdf too large (${buf.byteLength} bytes)`);
+  }
+  type PdfParseFn = (buf: Buffer) => Promise<{ text: string }>;
+  const mod = (await import("pdf-parse")) as unknown as
+    | PdfParseFn
+    | { default: PdfParseFn };
+  const pdfParse: PdfParseFn = typeof mod === "function" ? mod : mod.default;
+  const parsed = await pdfParse(Buffer.from(buf));
+  const text = (parsed.text ?? "").replace(/\s+/g, " ").trim();
+  if (!text) throw new Error("pdf produced no text");
+  return chipsFromText(text, s.id);
+}
+
 export async function expandSource(
   s: SourceConfig,
   opts: { cold?: boolean } = {},
@@ -213,6 +291,30 @@ export async function expandSource(
         const chips = await fetchHttpChips(s);
         s.lastFetched = new Date().toISOString();
         s.lastError = undefined;
+        await upsertSource(s);
+        return chips;
+      } catch (e) {
+        s.lastError = e instanceof Error ? e.message : String(e);
+        await upsertSource(s);
+        return [];
+      }
+    case "url":
+      try {
+        const chips = await fetchUrlChips(s);
+        s.lastFetched = new Date().toISOString();
+        s.lastError = chips.length === 0 ? "page produced no extractable text" : undefined;
+        await upsertSource(s);
+        return chips;
+      } catch (e) {
+        s.lastError = e instanceof Error ? e.message : String(e);
+        await upsertSource(s);
+        return [];
+      }
+    case "pdf":
+      try {
+        const chips = await fetchPdfChips(s);
+        s.lastFetched = new Date().toISOString();
+        s.lastError = chips.length === 0 ? "pdf produced no extractable text" : undefined;
         await upsertSource(s);
         return chips;
       } catch (e) {

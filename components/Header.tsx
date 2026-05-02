@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
 type Props = {
   cold: boolean;
   onToggleColdAction: () => void;
@@ -8,6 +10,7 @@ type Props = {
   onClearThreadAction: () => void;
   onOpenSourcesAction: () => void;
   sourceCount: number;
+  onExportChatAction?: (format: "json" | "markdown") => void;
 };
 
 export default function Header({
@@ -18,6 +21,7 @@ export default function Header({
   onClearThreadAction,
   onOpenSourcesAction,
   sourceCount,
+  onExportChatAction,
 }: Props) {
   return (
     <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
@@ -29,6 +33,9 @@ export default function Header({
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {threadCount > 0 && onExportChatAction ? (
+          <ExportChatMenu onExportAction={onExportChatAction} />
+        ) : null}
         {threadCount > 0 ? (
           <button
             onClick={onClearThreadAction}
@@ -81,6 +88,61 @@ export default function Header({
         </button>
       </div>
     </header>
+  );
+}
+
+function ExportChatMenu({
+  onExportAction,
+}: {
+  onExportAction: (format: "json" | "markdown") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const pick = (fmt: "json" | "markdown") => {
+    setOpen(false);
+    onExportAction(fmt);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-full border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1 text-[11px] text-zinc-400 transition hover:border-[var(--accent-soft)] hover:text-zinc-200"
+        title="Export this conversation"
+      >
+        Export ▾
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--panel)] shadow-lg">
+          <button
+            onClick={() => pick("json")}
+            className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] text-zinc-200 hover:bg-[var(--panel-2)]"
+          >
+            <span>JSON</span>
+            <span className="text-[10px] text-zinc-500">.json</span>
+          </button>
+          <button
+            onClick={() => pick("markdown")}
+            className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] text-zinc-200 hover:bg-[var(--panel-2)]"
+          >
+            <span>Markdown</span>
+            <span className="text-[10px] text-zinc-500">.md</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

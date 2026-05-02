@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ParsedIntent, RenderResult, Suggestion } from "@/lib/elicit/schemas";
 import type { ThreadItem } from "./Telepath";
 import VegaCanvas from "./renderers/VegaCanvas";
 import MermaidCanvas from "./renderers/MermaidCanvas";
 import SlideCanvas from "./renderers/SlideCanvas";
+import {
+  downloadBlob,
+  downloadJson,
+  downloadText,
+  exportFilename,
+  htmlElementToPng,
+  htmlElementToSvgString,
+  svgElementToPng,
+  svgElementToString,
+} from "@/lib/export/download";
 
 type Phase =
   | "idle"
@@ -148,7 +158,7 @@ function ThreadCard({
             ) : null}
             {item.status === "rendered" && item.result ? (
               <>
-                <RenderedResult result={item.result} />
+                <RenderedResult result={item.result} title={item.intent?.goal ?? item.prompt} />
                 {compact ? null : suggestions.length > 0 ? (
                   <SuggestionRow suggestions={suggestions} onPick={onSuggestionAction} />
                 ) : null}
@@ -234,10 +244,167 @@ function DimensionStrip({ intent }: { intent: ParsedIntent }) {
   );
 }
 
-function RenderedResult({ result }: { result: RenderResult }) {
-  if (result.outputKind === "chart") return <VegaCanvas spec={result.spec} />;
-  if (result.outputKind === "diagram") return <MermaidCanvas source={result.spec.source} />;
-  return <SlideCanvas spec={result.spec} />;
+function RenderedResult({ result, title }: { result: RenderResult; title: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="flex flex-col gap-2">
+      <ExportToolbar result={result} title={title} containerRef={containerRef} />
+      <div ref={containerRef}>
+        {result.outputKind === "chart" ? (
+          <VegaCanvas spec={result.spec} />
+        ) : result.outputKind === "diagram" ? (
+          <MermaidCanvas source={result.spec.source} />
+        ) : (
+          <SlideCanvas spec={result.spec} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExportToolbar({
+  result,
+  title,
+  containerRef,
+}: {
+  result: RenderResult;
+  title: string;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const findSvg = (): SVGElement | null => {
+    const root = containerRef.current;
+    if (!root) return null;
+    return root.querySelector("svg");
+  };
+
+  const findSlideRoot = (): HTMLElement | null => {
+    const root = containerRef.current;
+    if (!root) return null;
+    return (root.firstElementChild as HTMLElement | null) ?? null;
+  };
+
+  const run = async (label: string, fn: () => Promise<void> | void) => {
+    setBusy(label);
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onSvg = () =>
+    run("svg", () => {
+      if (result.outputKind === "slide") {
+        const root = findSlideRoot();
+        if (!root) throw new Error("slide root not in DOM");
+        const rect = root.getBoundingClientRect();
+        const svgString = htmlElementToSvgString(
+          root,
+          Math.round(rect.width),
+          Math.round(rect.height),
+        );
+        downloadText(
+          exportFilename(result.outputKind, title, "svg"),
+          svgString,
+          "image/svg+xml",
+        );
+        return;
+      }
+      const svg = findSvg();
+      if (!svg) throw new Error("no <svg> element found yet — try again in a moment");
+      downloadText(
+        exportFilename(result.outputKind, title, "svg"),
+        svgElementToString(svg),
+        "image/svg+xml",
+      );
+    });
+
+  const onPng = () =>
+    run("png", async () => {
+      if (result.outputKind === "slide") {
+        const root = findSlideRoot();
+        if (!root) throw new Error("slide root not in DOM");
+        const blob = await htmlElementToPng(root, 2);
+        downloadBlob(exportFilename(result.outputKind, title, "png"), blob);
+        return;
+      }
+      const svg = findSvg();
+      if (!svg) throw new Error("no <svg> element found yet — try again in a moment");
+      const blob = await svgElementToPng(svg, 2);
+      downloadBlob(exportFilename(result.outputKind, title, "png"), blob);
+    });
+
+  const onJson = () =>
+    run("json", () => {
+      downloadJson(exportFilename(result.outputKind, title, "json"), result.spec);
+    });
+
+  const onMermaidSource = () =>
+    run("mmd", () => {
+      if (result.outputKind !== "diagram") return;
+      downloadText(
+        exportFilename(result.outputKind, title, "mmd"),
+        result.spec.source,
+        "text/plain",
+      );
+    });
+
+  return (
+    <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+      <span className="mr-1 text-[10px] text-zinc-600">export</span>
+      <ExportBtn onClick={onSvg} active={busy === "svg"}>
+        svg
+      </ExportBtn>
+      <ExportBtn onClick={onPng} active={busy === "png"}>
+        png
+      </ExportBtn>
+      <ExportBtn onClick={onJson} active={busy === "json"}>
+        {result.outputKind === "diagram" ? "json" : result.outputKind === "chart" ? "vega" : "json"}
+      </ExportBtn>
+      {result.outputKind === "diagram" ? (
+        <ExportBtn onClick={onMermaidSource} active={busy === "mmd"}>
+          .mmd
+        </ExportBtn>
+      ) : null}
+      {err ? (
+        <span className="ml-2 normal-case text-[10px] text-[var(--missing)]" title={err}>
+          export failed
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ExportBtn({
+  onClick,
+  active,
+  children,
+}: {
+  onClick: () => void;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={active}
+      className={
+        "rounded-full border px-2 py-0.5 transition " +
+        (active
+          ? "border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]"
+          : "border-[var(--border)] bg-[var(--panel-2)] text-zinc-400 hover:border-[var(--accent-soft)] hover:text-zinc-100")
+      }
+    >
+      {children}
+    </button>
+  );
 }
 
 function ErrorCard({ message }: { message: string }) {

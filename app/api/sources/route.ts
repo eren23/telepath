@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CreateBody = z.object({
-  type: z.enum(["json", "http", "text", "hermes-sessions"]),
+  type: z.enum(["json", "http", "text", "hermes-sessions", "url", "pdf"]),
   name: z.string().min(1).max(80),
   content: z.string().optional(),
   url: z.url().optional(),
@@ -43,8 +43,8 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
   }
-  if (parsed.data.type === "http" && !parsed.data.url) {
-    return NextResponse.json({ error: "http source requires url" }, { status: 400 });
+  if ((parsed.data.type === "http" || parsed.data.type === "url" || parsed.data.type === "pdf") && !parsed.data.url) {
+    return NextResponse.json({ error: `${parsed.data.type} source requires url` }, { status: 400 });
   }
   if ((parsed.data.type === "json" || parsed.data.type === "text") && !parsed.data.content) {
     return NextResponse.json({ error: `${parsed.data.type} source requires content` }, { status: 400 });

@@ -9,6 +9,8 @@ import Header from "./Header";
 import SourcesDrawer from "./SourcesDrawer";
 import DistillModal from "./DistillModal";
 import type { GeneralizedSkill } from "@/lib/skill-generalize";
+import { downloadText, exportFilename } from "@/lib/export/download";
+import { threadToJson, threadToMarkdown } from "@/lib/export/chat";
 import type {
   Dimension,
   ParsedIntent,
@@ -111,6 +113,24 @@ export default function Telepath() {
     setThread([]);
     setUsedChipIds([]);
     setPhase("idle");
+  };
+
+  const exportChat = (format: "json" | "markdown") => {
+    if (thread.length === 0) return;
+    const firstGoal = thread[0].intent?.goal ?? thread[0].prompt ?? "chat";
+    if (format === "json") {
+      downloadText(
+        exportFilename("chat", firstGoal, "json"),
+        threadToJson(thread),
+        "application/json",
+      );
+    } else {
+      downloadText(
+        exportFilename("chat", firstGoal, "md"),
+        threadToMarkdown(thread),
+        "text/markdown",
+      );
+    }
   };
 
   const submitText = async (text: string) => {
@@ -375,6 +395,7 @@ export default function Telepath() {
         onClearThreadAction={clearThread}
         onOpenSourcesAction={() => setSourcesOpen(true)}
         sourceCount={sourceCount}
+        onExportChatAction={exportChat}
       />
       <div className="flex flex-1 overflow-hidden">
         <KnowledgeRail
