@@ -11,6 +11,7 @@ type Props = {
   generalizing: boolean;
   generalized: GeneralizedSkill | null;
   generalizeError: string | null;
+  via?: "hermes" | "kimi-fallback" | null;
   onCloseAction: () => void;
   onSaveAction: (payload: {
     slug: string;
@@ -29,6 +30,7 @@ export default function DistillModal({
   generalizing,
   generalized,
   generalizeError,
+  via,
   onCloseAction,
   onSaveAction,
 }: Props) {
@@ -40,6 +42,19 @@ export default function DistillModal({
   const [tags, setTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // When the modal opens, always seed from the literal so save is never blocked
+  // even if generalize is in flight or fails.
+  useEffect(() => {
+    if (!open) return;
+    setMode("generalized");
+    setSlug(initialSlug);
+    setName(initialName);
+    setDescription(initialDescription);
+    setWhenToUse([]);
+    setTags([]);
+  }, [open, initialSlug, initialName, initialDescription]);
+
+  // When generalize finishes successfully, override fields with the better version.
   useEffect(() => {
     if (!open) return;
     if (generalized && mode === "generalized") {
@@ -48,14 +63,33 @@ export default function DistillModal({
       setDescription(generalized.description);
       setWhenToUse(generalized.whenToUse);
       setTags(generalized.tags);
-    } else if (mode === "literal") {
+    }
+  }, [open, generalized, mode]);
+
+  // If generalize errors out, bounce back to literal so the user can still save.
+  useEffect(() => {
+    if (!open) return;
+    if (generalizeError && mode === "generalized") {
+      setMode("literal");
       setSlug(initialSlug);
       setName(initialName);
       setDescription(initialDescription);
       setWhenToUse([]);
       setTags([]);
     }
-  }, [open, generalized, mode, initialSlug, initialName, initialDescription]);
+  }, [open, generalizeError, mode, initialSlug, initialName, initialDescription]);
+
+  // Switching back to literal mode manually
+  useEffect(() => {
+    if (!open) return;
+    if (mode === "literal" && !generalizeError) {
+      setSlug(initialSlug);
+      setName(initialName);
+      setDescription(initialDescription);
+      setWhenToUse([]);
+      setTags([]);
+    }
+  }, [open, mode, generalizeError, initialSlug, initialName, initialDescription]);
 
   if (!open) return null;
 
@@ -123,11 +157,18 @@ export default function DistillModal({
             ) : null}
           </div>
 
-          {mode === "generalized" && generalizeError ? (
-            <div className="mb-3 rounded border border-[var(--missing)]/40 bg-[var(--missing)]/10 px-3 py-2 text-[11px] text-[var(--missing)]">
-              Hermes couldn&apos;t distill this one — falling back to literal.
-              <br />
-              <span className="opacity-70">{generalizeError.slice(0, 200)}</span>
+          {generalizeError && mode === "literal" ? (
+            <div className="mb-3 rounded border border-[var(--asked)]/40 bg-[var(--asked)]/10 px-3 py-2 text-[11px] text-[var(--asked)]">
+              Hermes distillation didn&apos;t parse — saved as literal instead.
+              <details className="mt-1 opacity-80">
+                <summary className="cursor-pointer">why</summary>
+                <span>{generalizeError.slice(0, 240)}</span>
+              </details>
+            </div>
+          ) : null}
+          {via === "kimi-fallback" && !generalizeError ? (
+            <div className="mb-3 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-3 py-2 text-[11px] text-[var(--accent)]">
+              Hermes couldn&apos;t distill cleanly this turn — Kimi K2 picked up the same prompt and produced this template.
             </div>
           ) : null}
 

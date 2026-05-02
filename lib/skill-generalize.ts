@@ -1,4 +1,6 @@
 import { askHermes } from "@/lib/hermes-runtime";
+import { chatJSON } from "@/lib/kimi";
+import { z } from "zod";
 import type { ResolvedIntent, OutputKind } from "@/lib/elicit/schemas";
 
 export type GeneralizedSkill = {
@@ -9,21 +11,21 @@ export type GeneralizedSkill = {
   tags: string[];
   slots: { id: string; label: string; example: string }[];
   rawHermesAnswer?: string;
+  source: "hermes" | "kimi-fallback";
 };
 
-const SYSTEM_INSTR = (intent: ResolvedIntent, outputKind: OutputKind) => `
-You are a "skill distiller". You receive ONE concrete visualization a user just rendered, and produce a GENERIC, REUSABLE skill template that captures the underlying pattern.
+const SYSTEM_INSTR = (intent: ResolvedIntent, outputKind: OutputKind) => `You are a "skill distiller". You receive ONE concrete visualization a user just rendered, and produce a GENERIC, REUSABLE skill template that captures the underlying pattern.
 
 Your job:
-1. Look at the concrete intent and figure out what's the SPECIFIC instance (named projects, dates, numbers) vs. the ABSTRACT recipe (chart-of-X-by-Y).
-2. Extract the abstract recipe as a reusable Hermes skill.
+1. Figure out what's the SPECIFIC instance (named projects, dates, numbers) vs. the ABSTRACT recipe.
+2. Extract the abstract recipe.
 3. Identify the user-specific "slots" that should be parameters next time.
 
 Rules:
-- The skill must be USEFUL across many similar future asks, not just this one.
-- Name + description should NOT contain proper nouns from the concrete instance (no "CodeWM", no "Sfumato", no specific dates) UNLESS the user's whole role is about that one project — in which case keep the most stable noun.
-- Slots are the parameters that vary instance to instance. Each slot has: id (kebab), label (human), example (the value seen this time).
-- "whenToUse" lists 3 patterns of future user requests this skill matches. Be concrete: phrasings the user might type.
+- The skill must work for many similar future asks, not just this one.
+- Name + description should NOT contain proper nouns from the concrete instance unless the user's whole role IS that one project.
+- Slots: parameters that vary instance to instance. Each: id (kebab), label (human), example (value seen this time).
+- whenToUse: 3 concrete future-phrasing patterns the user might type.
 - Tags: 3-5, lowercase, kebab.
 
 Input:
@@ -32,7 +34,8 @@ Concrete intent: ${intent.goal}
 Resolved dimensions:
 ${intent.dimensions.map((d) => `- ${d.label}: ${d.value ?? "(none)"} [${d.source}]`).join("\n")}
 
-Output STRICT JSON:
+CRITICAL: respond with a single raw JSON object. NO markdown code fences. NO preamble. NO explanation. JUST the JSON object, starting with { and ending with }.
+
 {
   "slug": "kebab-case ≤ 4 words",
   "name": "Title Case ≤ 6 words",
@@ -40,45 +43,82 @@ Output STRICT JSON:
   "whenToUse": ["pattern 1", "pattern 2", "pattern 3"],
   "tags": ["tag1","tag2","tag3"],
   "slots": [{"id": "slug-id", "label": "Human Label", "example": "value-from-this-render"}]
+}`;
+
+function intoSkill(parsed: Record<string, unknown>, source: GeneralizedSkill["source"], rawAnswer?: string): GeneralizedSkill {
+  return {
+    slug: sanitizeSlug(String(parsed.slug ?? parsed.name ?? "skill")),
+    name: typeof parsed.name === "string" ? parsed.name : "Generalized skill",
+    description: typeof parsed.description === "string" ? parsed.description : "",
+    whenToUse: Array.isArray(parsed.whenToUse) ? (parsed.whenToUse as unknown[]).slice(0, 6).map(String) : [],
+    tags: Array.isArray(parsed.tags) ? (parsed.tags as unknown[]).slice(0, 6).map(String) : [],
+    slots: Array.isArray(parsed.slots)
+      ? (parsed.slots as Record<string, unknown>[]).map((s) => ({
+          id: sanitizeSlug(String(s.id ?? "slot")),
+          label: String(s.label ?? s.id ?? "Slot"),
+          example: String(s.example ?? ""),
+        })).slice(0, 8)
+      : [],
+    rawHermesAnswer: rawAnswer?.slice(0, 1200),
+    source,
+  };
 }
 
-No prose, no markdown fences. JSON only.`;
+const KimiSkillSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  whenToUse: z.array(z.string()),
+  tags: z.array(z.string()),
+  slots: z.array(z.object({
+    id: z.string(),
+    label: z.string(),
+    example: z.string(),
+  })),
+});
+
+async function distillViaKimi(intent: ResolvedIntent, outputKind: OutputKind): Promise<GeneralizedSkill> {
+  const parsed = await chatJSON(KimiSkillSchema, [
+    { role: "system", content: SYSTEM_INSTR(intent, outputKind) },
+    { role: "user", content: "Distill this." },
+  ], { temperature: 0.3 });
+  return intoSkill(parsed as unknown as Record<string, unknown>, "kimi-fallback");
+}
 
 export async function generalizeSkill(
   intent: ResolvedIntent,
   outputKind: OutputKind,
-): Promise<{ ok: true; skill: GeneralizedSkill } | { ok: false; error: string; raw?: string }> {
-  const r = await askHermes(SYSTEM_INSTR(intent, outputKind), {
-    timeoutMs: 35_000,
-  });
-  if (!r.ok) {
-    return { ok: false, error: r.error ?? "hermes call failed", raw: r.text };
+): Promise<{ ok: true; skill: GeneralizedSkill; via: "hermes" | "kimi-fallback"; hermesError?: string } | { ok: false; error: string; raw?: string }> {
+  // Try Hermes first — that's the demo narrative.
+  const r = await askHermes(SYSTEM_INSTR(intent, outputKind), { timeoutMs: 60_000 });
+  if (r.ok) {
+    const text = r.text.trim();
+    const jsonStr = extractJson(text);
+    if (jsonStr) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        return { ok: true, skill: intoSkill(parsed, "hermes", text), via: "hermes" };
+      } catch {
+        // fall through to Kimi
+      }
+    }
   }
-  const text = r.text.trim();
-  const jsonStr = extractJson(text);
-  if (!jsonStr) {
-    return { ok: false, error: "no JSON object found in Hermes answer", raw: text };
-  }
+
+  // Hermes failed or unparseable — try Kimi K2 directly via JSON-mode (much more reliable).
   try {
-    const parsed = JSON.parse(jsonStr);
-    const skill: GeneralizedSkill = {
-      slug: sanitizeSlug(parsed.slug ?? parsed.name ?? "skill"),
-      name: typeof parsed.name === "string" ? parsed.name : "Generalized skill",
-      description: typeof parsed.description === "string" ? parsed.description : "",
-      whenToUse: Array.isArray(parsed.whenToUse) ? parsed.whenToUse.slice(0, 6).map(String) : [],
-      tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 6).map(String) : [],
-      slots: Array.isArray(parsed.slots)
-        ? parsed.slots.map((s: Record<string, unknown>) => ({
-            id: sanitizeSlug(String(s.id ?? "slot")),
-            label: String(s.label ?? s.id ?? "Slot"),
-            example: String(s.example ?? ""),
-          })).slice(0, 8)
-        : [],
-      rawHermesAnswer: text.slice(0, 1200),
+    const skill = await distillViaKimi(intent, outputKind);
+    return {
+      ok: true,
+      skill,
+      via: "kimi-fallback",
+      hermesError: r.ok ? "Hermes returned unparseable JSON" : (r.error ?? "Hermes call failed"),
     };
-    return { ok: true, skill };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), raw: text };
+    return {
+      ok: false,
+      error: `Hermes failed (${r.error ?? "unparseable"}); Kimi fallback also failed: ${e instanceof Error ? e.message : String(e)}`,
+      raw: r.text,
+    };
   }
 }
 

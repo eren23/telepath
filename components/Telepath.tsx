@@ -68,6 +68,7 @@ export default function Telepath() {
   const [generalizing, setGeneralizing] = useState(false);
   const [generalized, setGeneralized] = useState<GeneralizedSkill | null>(null);
   const [generalizeError, setGeneralizeError] = useState<string | null>(null);
+  const [generalizeVia, setGeneralizeVia] = useState<"hermes" | "kimi-fallback" | null>(null);
 
   const lastItem = thread[thread.length - 1] ?? null;
   const intent = lastItem?.intent ?? null;
@@ -281,6 +282,7 @@ export default function Telepath() {
     setGeneralizing(true);
     setGeneralized(null);
     setGeneralizeError(null);
+    setGeneralizeVia(null);
     try {
       const r = await fetch("/api/skills/generalize", {
         method: "POST",
@@ -297,6 +299,11 @@ export default function Telepath() {
       const data = await r.json();
       if (data.ok) {
         setGeneralized(data.skill);
+        setGeneralizeVia(data.via ?? "hermes");
+        if (data.hermesError) {
+          // Soft note that we used the fallback — not a blocking error.
+          console.warn("[telepath] hermes distill fallback:", data.hermesError);
+        }
       } else {
         setGeneralizeError(data.error ?? "unknown");
       }
@@ -423,6 +430,7 @@ export default function Telepath() {
         generalizing={generalizing}
         generalized={generalized}
         generalizeError={generalizeError}
+        via={generalizeVia}
         onCloseAction={() => setDistillOpen(false)}
         onSaveAction={persistSkill}
       />
