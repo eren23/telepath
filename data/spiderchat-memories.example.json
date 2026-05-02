@@ -1,0 +1,30 @@
+{
+  "source": "external-example",
+  "fetchedAt": "2026-05-02",
+  "user": {
+    "summary": "Example: ML researcher with active world-model and diffusion projects."
+  },
+  "chips": [
+    {
+      "id": "ex-project-a",
+      "label": "Lead — 1.3M-param world model beats 100× larger baselines",
+      "raw": "Lead researcher on Project A. Small model SOTA on retrieval. Pre-paper as of late 2025.",
+      "tags": ["research", "world-models"],
+      "importance": 9
+    },
+    {
+      "id": "ex-stack",
+      "label": "Trains on AWS / RunPod → W&B → HuggingFace",
+      "raw": "Compute stack: cloud GPUs, W&B for logging, HuggingFace for artifact persistence.",
+      "tags": ["infra"],
+      "importance": 7
+    },
+    {
+      "id": "ex-palette",
+      "label": "Manim style: 3Blue1Brown classic palette",
+      "raw": "Preferred Manim visualization style is 3Blue1Brown classic palette.",
+      "tags": ["viz"],
+      "importance": 6
+    }
+  ]
+}

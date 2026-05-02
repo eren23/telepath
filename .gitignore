@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code workspace
+.claude/
+
+# personal sources / runtime cache (sources.demo.json + spiderchat-memories.json are committed as examples)
+data/sources.json
+data/sources.real.bak.json
+
+# demo recordings (large binaries)
+recordings/
+
+# legacy seed file with personal context (kept locally as a fixture, not shipped)
+data/spiderchat-memories.json

@@ -1,0 +1,19 @@
+{
+  "sources": [
+    {
+      "id": "hermes-fs",
+      "type": "hermes",
+      "name": "Hermes filesystem",
+      "enabled": true,
+      "removable": false
+    },
+    {
+      "id": "demo-context",
+      "type": "json",
+      "name": "Maya's research context (demo)",
+      "enabled": true,
+      "removable": true,
+      "content": "{\n  \"chips\": [\n    {\"id\":\"demo-climatemesh\",\"label\":\"ClimateMesh lead — 1.8M-param VICReg+pred world model\",\"raw\":\"Lead researcher on ClimateMesh. The 1.8M-parameter VICReg+pred SOTA variant beats 100× larger weather foundation models on 5-day forecast retrieval. Phase 4 pre-paper as of 2026-04-30.\"},\n    {\"id\":\"demo-diff-forecast\",\"label\":\"Active: Diff-Forecast plan (Qwen-Sky SFT)\",\"raw\":\"Active research plan Diff-Forecast — un-parked 2026-04-26. Pipeline reproduces the paper; SFT regression discovered, recipe sweep in progress before scaling. Trains Qwen-Sky on AWS.\"},\n    {\"id\":\"demo-skydiff\",\"label\":\"Active: SkyDiff E2 (diffusion-LM + LoRA)\",\"raw\":\"SkyDiff E2 ablation status update 2026-04-29: both tracks positive. Track 1 v2→v3 reveals capacity tradeoff with full-FFN coverage; Track 2 is now a design-iteration story with positive control.\"},\n    {\"id\":\"demo-stack\",\"label\":\"Trains on AWS (4× A100) → W&B → HuggingFace\",\"raw\":\"Compute stack: AWS GPUs (mostly 4× A100 for Phase 2 trajectory experiments), W&B for logging, HuggingFace for artifact persistence. Training runs are usually overnight.\"},\n    {\"id\":\"demo-manim\",\"label\":\"Manim style: 3Blue1Brown classic palette\",\"raw\":\"Preferred Manim visualization style is 3Blue1Brown classic palette. Uses Manim CE for explainer animations on the team blog.\"},\n    {\"id\":\"demo-northstar\",\"label\":\"North-star: 'models anyone can hand to a meteorologist'\",\"raw\":\"Long-term goal: build climate models that working meteorologists can use without an ML degree.\"},\n    {\"id\":\"demo-hackathon\",\"label\":\"Currently in: Hermes Creative Hackathon (deadline 2026-05-03)\",\"raw\":\"Active hackathon entry: Hermes Agent Creative Hackathon (Nous Research × Kimi/Moonshot). $15k Main + $5k Kimi tracks. Deadline EOD Sun 2026-05-03.\"},\n    {\"id\":\"demo-essays\",\"label\":\"Writes mini-essays on agentic systems\",\"raw\":\"MiniEssays series. 'Agentic Tool Calling' (Dec 2025) — argues tool use is the most important pattern in modern agentic systems for going beyond knowledge cutoffs.\"}\n  ]\n}"
+    }
+  ]
+}

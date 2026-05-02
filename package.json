@@ -5,18 +5,28 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "record-demo": "node scripts/record-demo.mjs",
+    "record-demo:headed": "node scripts/record-demo.mjs --headless=false"
   },
   "dependencies": {
+    "gray-matter": "^4.0.3",
+    "mermaid": "^11.14.0",
     "next": "16.2.4",
+    "openai": "^6.35.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "vega": "^5.33.1",
+    "vega-embed": "^6.29.0",
+    "vega-lite": "^5.23.0",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.19.17",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "playwright": "^1.59.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
