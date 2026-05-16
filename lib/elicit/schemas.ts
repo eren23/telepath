@@ -88,6 +88,8 @@ const ParsedIntentInner = z.object({
   dimensions: z.array(Dimension),
   rationale: z.string().optional(),
   liveDataQuery: z.string().nullable().optional(),
+  external: z.boolean().optional(),
+  externalReason: z.string().optional(),
 });
 
 export const ParsedIntent = z.preprocess((v) => {
@@ -366,23 +368,10 @@ export const MathElement = z.preprocess((v) => {
     else if (typeof o.text === "string") o.kind = "text";
     else if (Array.isArray(o.tail) && Array.isArray(o.tip)) o.kind = "vector";
     else if ("x" in o && "y" in o) o.kind = "point";
-    else o.kind = "functionY"; // last-ditch
+    // No silent functionY fallback — let validation fail loudly so the route
+    // returns an error the user can see instead of a flat invisible line.
   }
-  // If we inferred functionY but expr is missing, supply a benign default.
-  if (o.kind === "functionY" && typeof o.expr !== "string") {
-    o.expr = "0";
-  }
-  // If we inferred latex but tex is missing, fall back to text.
-  if (o.kind === "latex" && typeof o.tex !== "string") {
-    if (typeof o.text === "string") {
-      o.kind = "text";
-    } else {
-      o.kind = "text";
-      o.text = "";
-      if (!Array.isArray(o.at)) o.at = [0, 0];
-    }
-  }
-  // If text/latex but missing "at", default to origin.
+  // If text/latex but missing "at", default to origin (harmless placement).
   if ((o.kind === "text" || o.kind === "latex") && !Array.isArray(o.at)) {
     o.at = [0, 0];
   }
@@ -399,16 +388,9 @@ const MafsSpecInner = z.looseObject({
   title: z.string().optional(),
 });
 
-export const MafsSpec = z.preprocess((v) => {
-  if (!v || typeof v !== "object") return v;
-  const o = { ...(v as Record<string, unknown>) };
-  // Some LLM emits skip `elements` entirely — supply a benign placeholder
-  // so the whole render doesn't crater.
-  if (!Array.isArray(o.elements) || o.elements.length === 0) {
-    o.elements = [{ kind: "functionY", expr: "0" }];
-  }
-  return o;
-}, MafsSpecInner);
+// Don't silently swap in an invisible flat-line placeholder when the LLM forgets
+// elements — let the schema fail and the renderer surface a real error.
+export const MafsSpec = MafsSpecInner;
 export type MafsSpec = z.infer<typeof MafsSpec>;
 
 export const KatexSpec = z.looseObject({
@@ -491,6 +473,8 @@ export const ResolvedIntent = z.object({
   dimensions: z.array(Dimension),
   liveDataQuery: z.string().nullable().optional(),
   liveFacts: z.array(z.string()).optional(),
+  external: z.boolean().optional(),
+  externalReason: z.string().optional(),
 });
 export type ResolvedIntent = z.infer<typeof ResolvedIntent>;
 

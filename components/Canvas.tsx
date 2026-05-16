@@ -168,7 +168,10 @@ function ThreadCard({
               </div>
             ) : null}
             {item.status === "error" ? (
-              <ErrorCard message={item.error ?? "unknown"} />
+              <ErrorCard
+                message={item.error ?? "unknown"}
+                details={item.errorDetails}
+              />
             ) : null}
             {item.status === "rendered" && item.result ? (
               <>
@@ -441,19 +444,53 @@ function StreamingPanel({ text }: { text: string }) {
   );
 }
 
-function ErrorCard({ message }: { message: string }) {
+function ErrorCard({
+  message,
+  details,
+}: {
+  message: string;
+  details?: ThreadItem["errorDetails"];
+}) {
+  const hint =
+    details?.hint ??
+    "Kimi's response didn't parse cleanly. Rephrase the ask, or just hit Send again.";
   return (
     <div className="rounded-xl border border-[var(--missing)]/40 bg-[var(--missing)]/10 p-4 text-[13px] text-[var(--missing)]">
       <div className="flex items-center justify-between">
-        <div className="font-semibold">Hit a snag</div>
-        <span className="text-[10px] uppercase tracking-wider opacity-60">type to retry</span>
+        <div className="font-semibold">
+          Render failed{details?.phase ? ` (${details.phase})` : ""}
+        </div>
+        <span className="text-[10px] uppercase tracking-wider opacity-60">
+          type to retry
+        </span>
       </div>
-      <p className="mt-1 text-[12px] text-[var(--missing)]/90">
-        Kimi&apos;s response didn&apos;t parse cleanly. Rephrase the ask, or just hit Send again.
-      </p>
-      <details className="mt-3 text-[11px] opacity-70">
-        <summary className="cursor-pointer">technical details</summary>
-        <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all">{message}</pre>
+      <p className="mt-1 text-[12px] text-[var(--missing)]/90">{hint}</p>
+      {details?.outputKind ? (
+        <div className="mt-2 text-[11px] text-[var(--missing)]/80">
+          requested output: <span className="font-mono">{details.outputKind}</span>
+        </div>
+      ) : null}
+      {details?.validationError ? (
+        <details className="mt-3 text-[11px] opacity-80" open>
+          <summary className="cursor-pointer">why it failed</summary>
+          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[10px] leading-relaxed">
+            {details.validationError}
+          </pre>
+        </details>
+      ) : null}
+      {details?.rawTail ? (
+        <details className="mt-2 text-[11px] opacity-70">
+          <summary className="cursor-pointer">last raw response</summary>
+          <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-all text-[10px]">
+            {details.rawTail}
+          </pre>
+        </details>
+      ) : null}
+      <details className="mt-2 text-[11px] opacity-60">
+        <summary className="cursor-pointer">stack</summary>
+        <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[10px]">
+          {message}
+        </pre>
       </details>
     </div>
   );

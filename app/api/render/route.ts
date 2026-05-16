@@ -186,7 +186,25 @@ function streamingResponse(intent: ResolvedIntent) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[render-stream] error:", err);
-        send("error", { error: msg });
+        // Structured error so the client can show actionable detail instead
+        // of a generic "Hit a snag". Mine the cause chain for Zod's pretty
+        // print and dig out the raw response tail when available.
+        const cause = (err as { cause?: unknown }).cause;
+        const validationError =
+          cause && typeof cause === "object" && "message" in cause
+            ? String((cause as { message: unknown }).message).slice(0, 1500)
+            : null;
+        const rawMatch = msg.match(/Last raw:\s*([\s\S]+)$/);
+        const rawTail = rawMatch ? rawMatch[1].slice(0, 800) : null;
+        send("error", {
+          error: msg,
+          phase: "synth",
+          outputKind: intent.outputKind,
+          validationError,
+          rawTail,
+          hint:
+            "Kimi's response didn't validate after 2 attempts. Try rephrasing the prompt, or refine after switching output kind.",
+        });
       } finally {
         controller.close();
       }

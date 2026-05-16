@@ -1,6 +1,7 @@
 import { chatJSON } from "@/lib/kimi";
 import { DIMENSION_CATALOG, ParsedIntent } from "./schemas";
 import type { MemorySnapshot } from "@/lib/hermes-memory";
+import { detectExternal } from "./external-detect";
 
 const SYSTEM = `You are Telepath's intent parser. Given a user's vague visualization request and their persistent agent memory, you decide:
 1. A clean restated goal in plain English. The goal SHOULD reference specific projects, tools, or topics from memory when they are relevant — don't say "the user's project" if memory tells you it is "CodeWM" or "Diff-XYZ".
@@ -15,6 +16,7 @@ HARD ROUTING RULES (override anything above):
 - If the prompt mentions "equation", "wave", "oscillation", "amplitude", "damping", or any named physics/math concept AND asks for a plot or visualization, output kind is "math" (single Mafs scene) OR "story" (if the user wants explanation too).
 - If the user says "walk me through" / "explain" / "derive" + math content, output kind is "story".
 - Vega "chart" is for DATA, not EQUATIONS. If the user wants y = f(x) with editable parameters, that is "math".
+- If the user pasted a URL or asked about a third-party paper / library / model (Goodfire, OpenAI, Anthropic, DeepMind, …), output kind is "story" (multi-node walkthrough). Do NOT pick "chart" for such requests — you would have to fabricate the data and we'd rather show a "no data" card than a fake bar chart. Equations + mafs + markdown explainers are the right shape for external papers.
 3. For each relevant dimension from the catalog, EITHER fill its value from memory (set source="memory" and quote the exact chipId you used in fromChipId) OR pick a sensible default (source="default") OR mark it missing (source="missing", value=null) — only mark as missing if both memory has nothing AND no reasonable default exists.
 
 You are biased toward NOT asking the user. Use memory aggressively. When multiple chips touch the same dimension, prefer the more SPECIFIC one for the value (cite that chipId). Pick defaults whenever a reasonable one exists. Only mark "missing" for dimensions where the wrong default would seriously degrade the output (e.g. data source for a chart).
@@ -79,5 +81,17 @@ export async function parseIntent(text: string, snap: MemorySnapshot) {
     },
   ], { temperature: 0.3 });
 
-  return result;
+  // Deterministic external-topic detection runs regardless of what the LLM
+  // chose — overrides the model when the prompt is clearly about an outside
+  // topic so memory bias doesn't crowbar in user-specific nouns.
+  const signal = detectExternal({
+    prompt: text,
+    goal: result.goal,
+    chips: snap.chips,
+  });
+  return {
+    ...result,
+    external: signal.external,
+    externalReason: signal.reason,
+  };
 }

@@ -57,9 +57,13 @@ function wrapConceptAnchors(
     const anchors = c.anchors && c.anchors.length > 0 ? c.anchors : [c.label];
     for (const a of anchors) {
       const trimmed = (a ?? "").trim();
-      if (trimmed.length >= 2 && trimmed.length <= 40) {
-        flat.push({ anchor: trimmed, concept: c });
-      }
+      // Anchors are meant to be short hover targets — a single word or a tiny
+      // phrase. Reject whole-sentence anchors so we don't underline 30+ chars
+      // of prose because the LLM put a definition in the anchor field.
+      if (trimmed.length < 2 || trimmed.length > 30) continue;
+      const whitespaceRuns = trimmed.match(/\s+/g)?.length ?? 0;
+      if (whitespaceRuns > 3) continue;
+      flat.push({ anchor: trimmed, concept: c });
     }
   }
   if (flat.length === 0) return () => {};

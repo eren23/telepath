@@ -73,6 +73,17 @@ describe("setPointer", () => {
     expect(setPointer({ arr: [1, 2] }, "/arr/notanum", 9)).toBe(false);
     expect(setPointer({ arr: [1, 2] }, "/arr/-1", 9)).toBe(false);
   });
+
+  it("rejects undefined / NaN / Infinity values (Vega-scale safety)", () => {
+    const obj = { x: 1 };
+    expect(setPointer(obj, "/x", undefined)).toBe(false);
+    expect(setPointer(obj, "/x", Number.NaN)).toBe(false);
+    expect(setPointer(obj, "/x", Number.POSITIVE_INFINITY)).toBe(false);
+    expect(setPointer(obj, "/x", Number.NEGATIVE_INFINITY)).toBe(false);
+    expect(obj.x).toBe(1);
+    expect(setPointer(obj, "/x", 0)).toBe(true); // 0 is finite and fine
+    expect(obj.x).toBe(0);
+  });
 });
 
 describe("applyBindings", () => {

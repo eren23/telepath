@@ -31,11 +31,14 @@ export function getPointer(root: unknown, pointer: string): unknown {
 }
 
 // Mutates `root` in place. Returns true if the parent path resolved, false otherwise.
+// Refuses to write NaN, Infinity, or undefined — those silently break Vega scales.
 export function setPointer(
   root: unknown,
   pointer: string,
   value: unknown,
 ): boolean {
+  if (value === undefined) return false;
+  if (typeof value === "number" && !Number.isFinite(value)) return false;
   const segs = segments(pointer);
   if (segs.length === 0) return false;
   let cur: unknown = root;

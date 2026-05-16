@@ -60,6 +60,13 @@ export type ThreadItem = {
   liveData?: LiveDataInfo | null;
   streamingText?: string;
   streamingVia?: "stream" | "stream-fallback";
+  errorDetails?: {
+    phase?: string;
+    outputKind?: string;
+    validationError?: string | null;
+    rawTail?: string | null;
+    hint?: string;
+  };
 };
 
 const STREAM_DISABLED =
@@ -433,6 +440,8 @@ export default function Telepath() {
       goal: it.goal,
       outputKind: it.outputKind,
       dimensions: dims,
+      external: it.external,
+      externalReason: it.externalReason,
     });
     try {
       if (STREAM_DISABLED) {
@@ -495,8 +504,28 @@ export default function Telepath() {
         } else if (event === "stream_error") {
           streamErr = (data as { message?: string } | null)?.message ?? "stream parse failed";
         } else if (event === "error") {
-          const msg = (data as { error?: string } | null)?.error ?? "render error";
-          throw new Error(msg);
+          const d = data as {
+            error?: string;
+            phase?: string;
+            outputKind?: string;
+            validationError?: string | null;
+            rawTail?: string | null;
+            hint?: string;
+          } | null;
+          updateLast({
+            status: "error",
+            error: d?.error ?? "render error",
+            streamingText: "",
+            errorDetails: {
+              phase: d?.phase,
+              outputKind: d?.outputKind,
+              validationError: d?.validationError,
+              rawTail: d?.rawTail,
+              hint: d?.hint,
+            },
+          });
+          setPhase("error");
+          return;
         }
       }
 

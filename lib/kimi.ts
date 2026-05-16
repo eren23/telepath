@@ -74,7 +74,9 @@ export async function chatJSON<T>(
   messages: ChatMessage[],
   opts: ChatJSONOptions = {},
 ): Promise<T> {
-  const { temperature = 0.4, maxRetries = 2, model = KIMI_MODEL } = opts;
+  // 1 retry = 2 attempts. Reduces worst-case latency from 3×60s to 2×60s
+  // while still recovering from a single malformed emission.
+  const { temperature = 0.4, maxRetries = 1, model = KIMI_MODEL } = opts;
   const client = kimi();
 
   const seed: ChatMessage[] = [

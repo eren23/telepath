@@ -1,15 +1,26 @@
 "use client";
 
 import { useMemo } from "react";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
 import type { ParamDef } from "@/lib/elicit/schemas";
 
 type AnySchema = Record<string, unknown>;
+export type LevaStore = ReturnType<typeof useCreateStore>;
 
+export type SpecControls = {
+  values: Record<string, unknown>;
+  store: LevaStore;
+  isEmpty: boolean;
+};
+
+// Returns a per-instance Leva store so multiple renderers don't fight over the
+// global panel. Each MafsRenderer / VegaCanvas owns its own <LevaPanel store />.
 export function useSpecControls(
   params: ParamDef[] | undefined,
   groupKey?: string,
-): Record<string, unknown> {
+): SpecControls {
+  const store = useCreateStore();
+
   const schema = useMemo<AnySchema>(() => {
     if (!params || params.length === 0) return {};
     const out: AnySchema = {};
@@ -41,11 +52,17 @@ export function useSpecControls(
   }, [params]);
 
   const isEmpty = Object.keys(schema).length === 0;
-  // useControls must always be called (hook rules); when empty, pass an empty schema.
+  // useControls hook must run unconditionally; pass empty schema when nothing
+  // to declare so React's hook order stays stable.
   const values = useControls(
     groupKey ?? "params",
     isEmpty ? {} : schema,
     [schema, groupKey],
+    { store },
   );
-  return (values ?? {}) as Record<string, unknown>;
+  return {
+    values: (values ?? {}) as Record<string, unknown>,
+    store,
+    isEmpty,
+  };
 }
