@@ -7,16 +7,25 @@
     "build": "next build",
     "start": "next start",
     "record-demo": "node scripts/record-demo.mjs",
-    "record-demo:headed": "node scripts/record-demo.mjs --headless=false"
+    "record-demo:headed": "node scripts/record-demo.mjs --headless=false",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.143",
+    "fast-json-patch": "^3.1.1",
     "gray-matter": "^4.0.3",
+    "katex": "^0.16.47",
+    "leva": "^0.10.1",
+    "mafs": "^0.21.0",
+    "mathjs": "^15.2.0",
     "mermaid": "^11.14.0",
     "next": "16.2.4",
     "openai": "^6.35.0",
     "pdf-parse": "1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
     "vega": "^5.33.1",
     "vega-embed": "^6.29.0",
     "vega-lite": "^5.23.0",
@@ -27,8 +36,10 @@
     "@types/node": "^22.19.17",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.6",
     "playwright": "^1.59.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.6"
   }
 }

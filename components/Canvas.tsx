@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { ParsedIntent, RenderResult, Suggestion } from "@/lib/elicit/schemas";
 import type { ThreadItem } from "./Telepath";
+import dynamic from "next/dynamic";
 import VegaCanvas from "./renderers/VegaCanvas";
 import MermaidCanvas from "./renderers/MermaidCanvas";
 import SlideCanvas from "./renderers/SlideCanvas";
+
+const Story = dynamic(() => import("./viz/Story"), { ssr: false });
+const MafsRenderer = dynamic(
+  () => import("./viz/renderers/MafsRenderer"),
+  { ssr: false },
+);
 import {
   downloadBlob,
   downloadJson,
@@ -139,8 +146,15 @@ function ThreadCard({
         <div className="flex-1">
           <div className="text-[11px] uppercase tracking-wider text-zinc-500">telepath</div>
           <div className="mt-2">
-            {item.status === "thinking" || item.status === "rendering" ? (
+            {item.status === "thinking" ? (
               <div className="shimmer h-[300px] rounded-xl border border-[var(--border)]" />
+            ) : null}
+            {item.status === "rendering" ? (
+              item.streamingText && item.streamingText.length > 0 ? (
+                <StreamingPanel text={item.streamingText} />
+              ) : (
+                <div className="shimmer h-[300px] rounded-xl border border-[var(--border)]" />
+              )
             ) : null}
             {item.status === "asking" && item.question && !item.question.skipOk ? (
               <div className="rounded-xl border border-[var(--asked)]/30 bg-[var(--asked)]/5 p-4">
@@ -254,8 +268,12 @@ function RenderedResult({ result, title }: { result: RenderResult; title: string
           <VegaCanvas spec={result.spec} />
         ) : result.outputKind === "diagram" ? (
           <MermaidCanvas source={result.spec.source} />
-        ) : (
+        ) : result.outputKind === "slide" ? (
           <SlideCanvas spec={result.spec} />
+        ) : result.outputKind === "math" ? (
+          <MafsRenderer spec={result.spec} />
+        ) : (
+          <Story spec={result.spec} />
         )}
       </div>
     </div>
@@ -407,6 +425,22 @@ function ExportBtn({
   );
 }
 
+function StreamingPanel({ text }: { text: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--panel-2)] p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          streaming
+        </div>
+        <div className="text-[10px] text-zinc-600">{text.length} chars</div>
+      </div>
+      <pre className="thin-scroll mt-2 max-h-[280px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-zinc-400">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
 function ErrorCard({ message }: { message: string }) {
   return (
     <div className="rounded-xl border border-[var(--missing)]/40 bg-[var(--missing)]/10 p-4 text-[13px] text-[var(--missing)]">
@@ -481,6 +515,17 @@ function Empty() {
       <div className="max-w-md text-center">
         <div className="mb-4 text-3xl font-semibold tracking-tight text-zinc-100">
           It already knew.
+        </div>
+        <div className="mb-4 flex flex-wrap justify-center gap-2 text-[11px] text-zinc-500">
+          <span className="rounded-full border border-[var(--border)] bg-[var(--panel-2)] px-2 py-0.5">
+            chart · diagram · slide
+          </span>
+          <span className="rounded-full border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-0.5 text-[var(--accent)]">
+            math · story (editable)
+          </span>
+          <span className="rounded-full border border-[var(--memory)]/40 bg-[var(--memory)]/10 px-2 py-0.5 text-[var(--memory)]">
+            @agent prefix → Claude live loop
+          </span>
         </div>
         <p className="text-[14px] leading-relaxed text-zinc-400">
           Drop a vague intent — a chart you wish existed, a diagram of something fuzzy, a

@@ -9,7 +9,7 @@ Your job: produce an UPDATED intent.
 Output JSON shape (use these EXACT field names — camelCase, not snake_case):
 {
   "goal": string,
-  "outputKind": "chart" | "diagram" | "slide",
+  "outputKind": "chart" | "diagram" | "slide" | "math" | "story",
   "dimensions": [
     { "id": string, "label": string, "value": string | null,
       "source": "memory" | "asked" | "default" | "missing",
@@ -22,7 +22,8 @@ Rules:
 - The output kind should stay the same UNLESS the user clearly asks for a different format.
 - The "goal" should be a single short sentence reflecting the new combined intent, with specific subject names.
 - Set source="asked" only for dimensions whose value changed because of the tweak. Otherwise preserve the previous source.
-- Never invent dimension ids — only use ids that were in the previous intent or in the standard catalog.`;
+- Never invent dimension ids — only use ids that were in the previous intent or in the standard catalog.
+- For "math" / "story" intents the dimensions array can stay empty if the catalog doesn't apply.`;
 
 function memBlock(snap: MemorySnapshot): string {
   if (snap.cold) return "(cold start — no memory)";

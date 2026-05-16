@@ -50,5 +50,15 @@ data/sources.real.bak.json
 # demo recordings (large binaries)
 recordings/
 
+# playwright runtime artifacts from smoke tests
+/.playwright-mcp/
+
+# stage-test screenshots (kept locally, not shipped)
+stage-test-*.png
+stage*-*.png
+
 # legacy seed file with personal context (kept locally as a fixture, not shipped)
 data/spiderchat-memories.json
+
+#attocode
+.attocode/*

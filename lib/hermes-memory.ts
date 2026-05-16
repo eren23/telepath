@@ -22,7 +22,7 @@ export type SkillRecord = {
   slug: string;
   name: string;
   description: string;
-  outputKind: "chart" | "diagram" | "slide";
+  outputKind: "chart" | "diagram" | "slide" | "math" | "story";
   spec: unknown;
   dimensions?: unknown;
   createdAt?: string;

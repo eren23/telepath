@@ -104,10 +104,14 @@ export async function chatJSON<T>(
       const result = schema.safeParse(parsed);
       if (result.success) return result.data;
       lastError = result.error;
+      const pretty = z.prettifyError(result.error);
+      if (process.env.TELEPATH_DEBUG_VALIDATION === "1") {
+        console.warn(`[chatJSON] attempt ${attempt + 1} validation failed:\n${pretty.slice(0, 1500)}`);
+      }
       conv.push({ role: "assistant", content: raw });
       conv.push({
         role: "user",
-        content: `Your previous response did not match the schema. Validation errors:\n${z.prettifyError(result.error)}\n\nReturn a corrected JSON object.`,
+        content: `Your previous response did not match the schema. Validation errors:\n${pretty}\n\nReturn a corrected JSON object.`,
       });
     } catch (parseErr) {
       lastError = parseErr;
@@ -126,17 +130,24 @@ export async function chatJSON<T>(
 
 export type StreamChunk = { delta: string; done: boolean };
 
+export type ChatStreamOptions = {
+  temperature?: number;
+  model?: string;
+  responseFormat?: "json_object" | "text";
+};
+
 export async function* chatStream(
   messages: ChatMessage[],
-  opts: { temperature?: number; model?: string } = {},
+  opts: ChatStreamOptions = {},
 ): AsyncGenerator<StreamChunk> {
-  const { temperature = 0.4, model = KIMI_MODEL } = opts;
+  const { temperature = 0.4, model = KIMI_MODEL, responseFormat } = opts;
   const client = kimi();
   const stream = await client.chat.completions.create({
     model,
     temperature,
     stream: true,
     messages,
+    ...(responseFormat ? { response_format: { type: responseFormat } } : {}),
   });
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? "";
