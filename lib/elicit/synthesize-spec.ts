@@ -98,7 +98,8 @@ Rules:
 - Every "expr" / "xExpr" / "yExpr" is a mathjs expression. Use BARE functions: sin(x), cos(x), exp(x), log(x), sqrt(x), abs(x), pi, e. DO NOT use JavaScript "Math.exp", "Math.cos" — that fails. DO NOT use "**" for power; use "^" (mathjs).
 - The iteration variable for "functionY" is "x" (spatial). For parametric scenes use "t" as the iteration variable.
 - If your equation has a TIME variable but you only want a spatial snapshot, drop the time term (don't reference "t" inside a functionY expr). Example: for y = A·exp(-γx)·sin(kx-ωt) at t=0, write "A * exp(-gamma * x) * sin(k * x)".
-- Use ASCII parameter names that match your control "name" exactly (e.g. "gamma", not "γ" — Unicode parses but is risky).
+- CRITICAL — EVERY variable that appears in an expression (other than x, t, pi, e) MUST be the EXACT "name" of a declared control. If your expression uses "gamma", you MUST have a control with name "gamma". If you change "A" to "amp" in one place, change BOTH. Mismatched names produce a broken scene with no curve.
+- Use ASCII control names ONLY: "amplitude", "gamma", "omega", "k". NEVER use γ / ω / α as control names (Unicode breaks mathjs parsing in some configurations).
 - Pick a viewbox that frames the interesting region (default y is roughly [-2, 2] when amplitude defaults to 1; size it for the actual range).
 - Prefer 1-3 controls that genuinely change the picture. Don't add controls you don't reference in expressions.
 - Output a single JSON object. No markdown fences.
@@ -150,6 +151,8 @@ Rules:
 - For an arxiv-style paper-math walkthrough use: katex (the equation, with concepts on the variables) → mafs (the plot, with controls) → markdown (the explainer, with concepts on the key terms).
 - Every node id is unique. Titles are optional but help.
 - Inside any mafs/vega spec, prefer adding 1-3 controls so the reader can manipulate the visualization.
+- CRITICAL — only include a "mafs" node when there is a CLEAR y=f(x) or parametric curve to plot. The mafs node MUST contain at least one element of kind "functionY" or "parametric" — points/vectors/labels alone is NOT a useful Mafs scene and the renderer will refuse it. If the topic has no natural function to visualize, drop the mafs node and use markdown + katex + an optional vega chart instead.
+- Every variable referenced inside a mafs expression MUST be the EXACT "name" of a declared control on that same mafs node (other than the iteration variable x or t). If your expression uses "amplitude", you MUST have a control with name "amplitude". Mismatched names produce a broken scene.
 - Output a single JSON object. No markdown fences.`;
 
 const slideSystem = (external: boolean | undefined): string => `You generate a single-slide infographic spec.

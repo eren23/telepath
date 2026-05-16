@@ -134,6 +134,14 @@ export default function MafsRenderer({ spec }: Props) {
     return requested;
   }, [compiled, spec.viewbox, spec.elements, values]);
 
+  // If preflight failed, swap the canvas for a high-signal fallback card so
+  // the user gets the equation + a clear diagnosis instead of a blank grid.
+  const allElementsBroken = variableErrors.length >= spec.elements.length;
+  const hasPlottableCurve = spec.elements.some(
+    (el) => el.kind === "functionY" || el.kind === "parametric",
+  );
+  const onlyDecorations = !hasPlottableCurve;
+
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--panel-2)] p-6">
       {spec.title ? (
@@ -141,30 +149,38 @@ export default function MafsRenderer({ spec }: Props) {
           {spec.title}
         </div>
       ) : null}
-      {variableErrors.length > 0 ? (
-        <div className="mb-3 rounded-lg border border-[var(--missing)]/40 bg-[var(--missing)]/10 p-3 text-[12px] text-[var(--missing)]">
-          <div className="font-semibold">Expression issue</div>
-          <ul className="mt-1 space-y-0.5">
-            {variableErrors.map((e, i) => (
-              <li key={i}>· {e}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div className="mafs-host">
-        <Mafs
-          height={420}
-          viewBox={{
-            x: viewBox.x as unknown as vec.Vector2,
-            y: viewBox.y as unknown as vec.Vector2,
-          }}
-        >
-          <Coordinates.Cartesian />
-          {spec.elements.map((el, i) =>
-            renderElement(el, compiled[i], values, `el-${i}`),
-          )}
-        </Mafs>
-      </div>
+      {allElementsBroken ? (
+        <BrokenMafsCard spec={spec} variableErrors={variableErrors} />
+      ) : onlyDecorations ? (
+        <NoCurveCard spec={spec} />
+      ) : (
+        <>
+          {variableErrors.length > 0 ? (
+            <div className="mb-3 rounded-lg border border-[var(--asked)]/40 bg-[var(--asked)]/10 p-3 text-[12px] text-[var(--asked)]">
+              <div className="font-semibold">Partial render</div>
+              <ul className="mt-1 space-y-0.5">
+                {variableErrors.map((e, i) => (
+                  <li key={i}>· {e}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="mafs-host">
+            <Mafs
+              height={420}
+              viewBox={{
+                x: viewBox.x as unknown as vec.Vector2,
+                y: viewBox.y as unknown as vec.Vector2,
+              }}
+            >
+              <Coordinates.Cartesian />
+              {spec.elements.map((el, i) =>
+                renderElement(el, compiled[i], values, `el-${i}`),
+              )}
+            </Mafs>
+          </div>
+        </>
+      )}
       {!isEmpty ? (
         <div className="leva-host pointer-events-auto mt-3">
           <LevaPanel
@@ -178,6 +194,94 @@ export default function MafsRenderer({ spec }: Props) {
           />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function NoCurveCard({ spec }: { spec: MafsSpec }) {
+  const decorations = spec.elements.map((el, i) => {
+    switch (el.kind) {
+      case "point":
+        return `point at (${el.x}, ${el.y})${el.label ? ` — ${el.label}` : ""}`;
+      case "vector":
+        return `vector from [${el.tail.join(", ")}] to [${el.tip.join(", ")}]${el.label ? ` — ${el.label}` : ""}`;
+      case "text":
+        return `text "${el.text}" at [${el.at.join(", ")}]`;
+      case "latex":
+        return `latex "${el.tex}" at [${el.at.join(", ")}]`;
+      default:
+        return `${el.kind} element ${i}`;
+    }
+  });
+  return (
+    <div className="rounded-lg border border-[var(--asked)]/40 bg-[var(--asked)]/10 p-4 text-[13px] text-[var(--asked)]">
+      <div className="font-semibold">No curve in this scene</div>
+      <p className="mt-1 text-[12px] text-[var(--asked)]/80">
+        The model emitted Mafs decorations (points / vectors / labels) but no
+        <code className="mx-1 rounded bg-[var(--panel)] px-1 py-0.5">functionY</code>
+        or
+        <code className="mx-1 rounded bg-[var(--panel)] px-1 py-0.5">parametric</code>
+        element to plot. Rendering the canvas alone would be misleading.
+      </p>
+      <div className="mt-3 rounded border border-[var(--border)] bg-[var(--panel)] p-2 font-mono text-[11px] text-zinc-300">
+        {decorations.map((d, i) => (
+          <div key={i}>· {d}</div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-[var(--asked)]/70">
+        Try refining: &ldquo;add a functionY for the curve you want plotted&rdquo;.
+      </p>
+    </div>
+  );
+}
+
+function BrokenMafsCard({
+  spec,
+  variableErrors,
+}: {
+  spec: MafsSpec;
+  variableErrors: string[];
+}) {
+  const exprs: string[] = spec.elements
+    .map((el) => {
+      if (el.kind === "functionY") return `y = ${el.expr}`;
+      if (el.kind === "parametric")
+        return `(x, y) = (${el.xExpr}, ${el.yExpr})`;
+      return "";
+    })
+    .filter(Boolean);
+  const controlNames = (spec.controls ?? [])
+    .map((c) => `${c.name}${"label" in c && c.label ? ` "${c.label}"` : ""}`)
+    .join(", ");
+  return (
+    <div className="rounded-lg border border-[var(--missing)]/40 bg-[var(--missing)]/10 p-4 text-[13px] text-[var(--missing)]">
+      <div className="font-semibold">Mafs scene can&apos;t render</div>
+      <p className="mt-1 text-[12px] text-[var(--missing)]/80">
+        The model emitted expressions that reference variables not bound to any
+        slider control. The scene can&apos;t plot until that mismatch is fixed.
+      </p>
+      {exprs.length > 0 ? (
+        <div className="mt-3 rounded border border-[var(--border)] bg-[var(--panel)] p-2 font-mono text-[11px] text-zinc-300">
+          {exprs.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-3 text-[11px] text-[var(--missing)]/80">
+        <div>
+          <span className="opacity-70">controls declared:</span>{" "}
+          <span className="font-mono">{controlNames || "(none)"}</span>
+        </div>
+        <ul className="mt-1 list-disc pl-4 opacity-80">
+          {variableErrors.map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
+      </div>
+      <p className="mt-3 text-[11px] text-[var(--missing)]/70">
+        Try refining: &ldquo;use ASCII names that match the controls&rdquo; or pivot
+        to a markdown / katex node for this concept.
+      </p>
     </div>
   );
 }

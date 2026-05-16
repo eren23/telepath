@@ -24,12 +24,15 @@ export function useSpecControls(
   const schema = useMemo<AnySchema>(() => {
     if (!params || params.length === 0) return {};
     const out: AnySchema = {};
-    for (const p of params) {
-      const label = p.label ?? p.name;
+    params.forEach((p, idx) => {
+      // Leva throws "Keys can not be empty" if name/label is "". Synthesize a
+      // safe fallback so a single bad LLM emit doesn't crash the panel.
+      const name = (p.name ?? "").trim() || `p${idx}`;
+      const label = (p.label ?? "").trim() || name;
       switch (p.type) {
         case "number":
         case "range":
-          out[p.name] = {
+          out[name] = {
             value: p.default,
             min: p.min,
             max: p.max,
@@ -38,16 +41,16 @@ export function useSpecControls(
           };
           break;
         case "boolean":
-          out[p.name] = { value: p.default, label };
+          out[name] = { value: p.default, label };
           break;
         case "select":
-          out[p.name] = { value: p.default, options: p.options, label };
+          out[name] = { value: p.default, options: p.options, label };
           break;
         case "color":
-          out[p.name] = { value: p.default, label };
+          out[name] = { value: p.default, label };
           break;
       }
-    }
+    });
     return out;
   }, [params]);
 

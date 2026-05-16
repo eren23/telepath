@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import type { Concept, MarkdownSpec } from "@/lib/elicit/schemas";
 import { useConceptHover } from "../ConceptPopover";
@@ -21,6 +23,13 @@ export default function MarkdownNode({ spec }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const ctx = useConceptHover();
 
+  // Stable plugin arrays so react-markdown doesn't rebuild on every render.
+  const remarkPlugins = useMemo(() => [remarkMath], []);
+  const rehypePlugins = useMemo(
+    () => [[rehypeKatex, { throwOnError: false, strict: "ignore" }] as const],
+    [],
+  );
+
   useEffect(() => {
     if (!ref.current || !ctx || !spec.concepts || spec.concepts.length === 0) {
       return;
@@ -32,7 +41,12 @@ export default function MarkdownNode({ spec }: Props) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--panel-2)] px-6 py-5 text-[14px] leading-relaxed text-zinc-200">
       <article ref={ref} className="prose-telepath">
-        <ReactMarkdown>{spec.md}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins as never}
+        >
+          {spec.md}
+        </ReactMarkdown>
       </article>
     </div>
   );
