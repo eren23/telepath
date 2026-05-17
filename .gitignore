@@ -56,6 +56,8 @@ recordings/
 # stage-test screenshots (kept locally, not shipped)
 stage-test-*.png
 stage*-*.png
+audit-*.png
+v2.*.png
 
 # legacy seed file with personal context (kept locally as a fixture, not shipped)
 data/spiderchat-memories.json
