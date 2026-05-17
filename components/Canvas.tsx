@@ -13,6 +13,7 @@ const MafsRenderer = dynamic(
   () => import("./viz/renderers/MafsRenderer"),
   { ssr: false },
 );
+import { RenderBoundary } from "./viz/RenderBoundary";
 import {
   downloadBlob,
   downloadJson,
@@ -267,17 +268,19 @@ function RenderedResult({ result, title }: { result: RenderResult; title: string
     <div className="flex flex-col gap-2">
       <ExportToolbar result={result} title={title} containerRef={containerRef} />
       <div ref={containerRef}>
-        {result.outputKind === "chart" ? (
-          <VegaCanvas spec={result.spec} />
-        ) : result.outputKind === "diagram" ? (
-          <MermaidCanvas source={result.spec.source} />
-        ) : result.outputKind === "slide" ? (
-          <SlideCanvas spec={result.spec} />
-        ) : result.outputKind === "math" ? (
-          <MafsRenderer spec={result.spec} />
-        ) : (
-          <Story spec={result.spec} />
-        )}
+        <RenderBoundary kind={result.outputKind}>
+          {result.outputKind === "chart" ? (
+            <VegaCanvas spec={result.spec} />
+          ) : result.outputKind === "diagram" ? (
+            <MermaidCanvas source={result.spec.source} />
+          ) : result.outputKind === "slide" ? (
+            <SlideCanvas spec={result.spec} />
+          ) : result.outputKind === "math" ? (
+            <MafsRenderer spec={result.spec} />
+          ) : (
+            <Story spec={result.spec} />
+          )}
+        </RenderBoundary>
       </div>
     </div>
   );

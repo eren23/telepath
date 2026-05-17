@@ -23,7 +23,13 @@ Hard rules:
 - Use add_node / remove_node ONLY when the tweak structurally changes what the user sees.
 - Every JSON pointer MUST resolve in the current node. If you are not sure the path exists, do NOT emit it.
 - Keep the envelope minimal — usually 1-5 ops.
-- Preserve node ids that already exist.`;
+- Preserve node ids that already exist.
+- KIND SELECTION when adding a node:
+  - Neural network / MLP / autoencoder / transformer block → kind="network". Spec: {direction?, layers:[{id, label?, activation?, nodes:[{id, label?, color?, shape?}]}], edges?, connect?, legend?}.
+  - Generic flowchart / sequence diagram / state machine / pipeline → kind="mermaid". (NOT neural nets.)
+  - Plottable math function or parametric curve → kind="mafs" with at least one functionY or parametric element. A mafs node with only points/vectors/labels CANNOT render — pick network/mermaid/katex instead.
+  - Single equation → kind="katex". Prose → kind="markdown". Data chart → kind="vega".
+- If the tweak is already satisfied or you cannot map it to a concrete change, return {"envelope": [], "explanation": "<reason>"} — the caller will surface that to the user. Do NOT invent no-op patches.`;
 
 function summarizeNode(node: StorySpec["nodes"][number]): string {
   switch (node.kind) {
@@ -71,6 +77,23 @@ function summarizeNode(node: StorySpec["nodes"][number]): string {
         kind: node.kind,
         title: node.title,
         spec: node.spec,
+      });
+    case "network":
+      return JSON.stringify({
+        id: node.id,
+        kind: node.kind,
+        title: node.title,
+        spec: {
+          direction: node.spec.direction,
+          layers: node.spec.layers.map((l) => ({
+            id: l.id,
+            label: l.label,
+            activation: l.activation,
+            nodeCount: l.nodes.length,
+            nodeIds: l.nodes.map((n) => n.id),
+          })),
+          edgeCount: (node.spec.edges ?? []).length,
+        },
       });
   }
 }

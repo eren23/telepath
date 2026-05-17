@@ -1,6 +1,8 @@
 import { applyPatch, deepClone, type Operation } from "fast-json-patch";
+import { StorySpec as StorySpecSchema } from "@/lib/elicit/schemas";
 import type { StorySpec, VizNode } from "@/lib/elicit/schemas";
 import type { JsonPatchOp, PatchEnvelope } from "./patch-schema";
+import { validateStorySemantics } from "./validate-semantics";
 
 export class PatchError extends Error {
   constructor(
@@ -13,7 +15,10 @@ export class PatchError extends Error {
 }
 
 // Apply a single envelope to a deep clone of `story`. Throws PatchError on any
-// resolution failure (missing target, missing path, bad op).
+// resolution failure (missing target, missing path, bad op) OR if the
+// post-patch StorySpec no longer validates — that catches patches that
+// remove required fields or invalidate a node kind, so the tool layer can
+// return a structured error back to Claude before the renderer ever sees it.
 export function applyEnvelope(story: StorySpec, env: PatchEnvelope): StorySpec {
   const next = deepClone(story) as StorySpec;
   switch (env.op) {
@@ -37,7 +42,7 @@ export function applyEnvelope(story: StorySpec, env: PatchEnvelope): StorySpec {
           e,
         );
       }
-      return next;
+      return validateOrThrow(next, env);
     }
     case "add_node": {
       const at =
@@ -45,7 +50,7 @@ export function applyEnvelope(story: StorySpec, env: PatchEnvelope): StorySpec {
           ? Math.max(0, Math.min(env.at, next.nodes.length))
           : next.nodes.length;
       next.nodes.splice(at, 0, env.node);
-      return next;
+      return validateOrThrow(next, env);
     }
     case "remove_node": {
       const before = next.nodes.length;
@@ -53,16 +58,34 @@ export function applyEnvelope(story: StorySpec, env: PatchEnvelope): StorySpec {
       if (next.nodes.length === before) {
         throw new PatchError(`remove target ${env.target} not found`, env);
       }
-      return next;
+      return validateOrThrow(next, env);
     }
     case "set_layout": {
       next.layout = {
         flow: env.flow ?? next.layout?.flow ?? "stack",
         ...(env.columns !== undefined ? { columns: env.columns } : {}),
       };
-      return next;
+      return validateOrThrow(next, env);
     }
   }
+}
+
+function validateOrThrow(candidate: StorySpec, env: PatchEnvelope): StorySpec {
+  const parsed = StorySpecSchema.safeParse(candidate);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path?.join(".") ?? "<root>";
+    throw new PatchError(
+      `post-patch validation failed at ${path}: ${issue?.message ?? "unknown"}`,
+      env,
+      parsed.error,
+    );
+  }
+  const semanticReason = validateStorySemantics(parsed.data as StorySpec);
+  if (semanticReason) {
+    throw new PatchError(`post-patch semantics failed: ${semanticReason}`, env);
+  }
+  return parsed.data as StorySpec;
 }
 
 // Apply a sequence of envelopes. Throws on first failure with context about

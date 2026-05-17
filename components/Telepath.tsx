@@ -36,6 +36,7 @@ type Snapshot = {
   chips: MemoryChip[];
   skills: SkillRecord[];
   sources?: { hermes: number; external: number };
+  agent?: { mode: "claude-env" | "claude-cli" | "kimi-only" };
 };
 
 export type LiveDataInfo = {
@@ -153,8 +154,11 @@ export default function Telepath() {
 
   const submitText = async (text: string) => {
     const trimmed = text.trim();
-    if (trimmed.startsWith("@agent ")) {
-      return submitToAgent(trimmed.slice(7).trim());
+    // Accept "@agent <text>", "@ agent <text>", "/agent <text>" — typing
+    // quirks shouldn't drop the user back into the elicit path silently.
+    const agentPrefix = trimmed.match(/^[@/]\s*agent\b\s*/i);
+    if (agentPrefix) {
+      return submitToAgent(trimmed.slice(agentPrefix[0].length).trim());
     }
     const canRefine =
       phase === "rendered" && lastItem?.intent && lastItem?.result;
@@ -228,7 +232,21 @@ export default function Telepath() {
     const prevResult = lastItem?.result;
     if (prevResult && prevResult.outputKind === "story") {
       const patched = await tryStoryPatch(prevResult.spec, tweak);
-      if (patched) {
+      if (patched?.kind === "no-op") {
+        // Patch engine said the tweak doesn't map to a concrete change.
+        // Don't silently re-render the same story — surface the explanation
+        // so the user knows to clarify.
+        updateLast({
+          intent: { ...intent, goal: intent.goal, dimensions: intent.dimensions },
+          result: prevResult,
+          suggestions: [],
+          status: "rendered",
+          streamingText: `(no change) ${patched.explanation}`,
+        });
+        setPhase("rendered");
+        return;
+      }
+      if (patched?.kind === "patched") {
         updateLast({
           intent: {
             ...intent,
@@ -285,7 +303,22 @@ export default function Telepath() {
   };
 
   const submitToAgent = async (cleanText: string) => {
-    if (cleanText.length === 0) return;
+    if (cleanText.length === 0) {
+      const item: ThreadItem = {
+        id: newId(),
+        prompt: "@agent",
+        intent: null,
+        result: null,
+        usedChipIds: [],
+        suggestions: [],
+        isRefine: false,
+        status: "error",
+        error: "Empty @agent prompt. Type what you want after @agent, e.g. `@agent diagram the diffusion sampler loop`.",
+      };
+      setThread((prev) => [...prev, item]);
+      setPhase("error");
+      return;
+    }
     const wasRendered = phase === "rendered" && lastItem?.result;
     const prevStory =
       lastItem?.result?.outputKind === "story" ? lastItem.result.spec : undefined;
@@ -322,6 +355,7 @@ export default function Telepath() {
       let finalStory: import("@/lib/elicit/schemas").StorySpec | null = null;
       let finalVia: "claude" | "kimi-fallback" | null = null;
       let fellBack = false;
+      let unchanged = false;
 
       for await (const { event, data } of readSse(r)) {
         if (event === "chunk") {
@@ -351,9 +385,11 @@ export default function Telepath() {
           const d = data as {
             via?: "claude" | "kimi-fallback";
             story?: import("@/lib/elicit/schemas").StorySpec;
+            unchanged?: boolean;
           } | null;
           finalVia = d?.via ?? null;
           if (d?.story) finalStory = d.story;
+          if (d?.unchanged) unchanged = true;
         } else if (event === "error") {
           const msg = (data as { error?: string } | null)?.error ?? "agent error";
           throw new Error(msg);
@@ -373,7 +409,11 @@ export default function Telepath() {
         result: { outputKind: "story", spec: finalStory } as RenderResult,
         suggestions: [],
         status: "rendered",
-        streamingText: "",
+        streamingText: unchanged
+          ? acc
+            ? `${acc.trim()}\n(no story mutation — same viz kept)`
+            : "(no change — claude asked for clarification instead of re-emitting the same story)"
+          : "",
         streamingVia:
           finalVia === "claude" && !fellBack ? "stream" : "stream-fallback",
       });
@@ -388,7 +428,11 @@ export default function Telepath() {
   const tryStoryPatch = async (
     prevStory: Extract<RenderResult, { outputKind: "story" }>["spec"],
     tweak: string,
-  ) => {
+  ): Promise<
+    | { kind: "patched"; story: import("@/lib/elicit/schemas").StorySpec; explanation?: string }
+    | { kind: "no-op"; explanation: string }
+    | null
+  > => {
     try {
       const r = await fetch("/api/refine?mode=patch", {
         method: "POST",
@@ -401,9 +445,14 @@ export default function Telepath() {
         explanation?: string;
         error?: unknown;
       };
-      if (!data.envelope || data.envelope.length === 0) return null;
+      if (!data.envelope || data.envelope.length === 0) {
+        if (data.explanation) {
+          return { kind: "no-op", explanation: data.explanation };
+        }
+        return null;
+      }
       const story = applyEnvelopes(prevStory, data.envelope);
-      return { story, explanation: data.explanation };
+      return { kind: "patched", story, explanation: data.explanation };
     } catch (e) {
       console.warn("[telepath] story-patch fallback:", e);
       return null;
@@ -650,6 +699,7 @@ export default function Telepath() {
         onOpenSourcesAction={() => setSourcesOpen(true)}
         sourceCount={sourceCount}
         onExportChatAction={exportChat}
+        agentMode={snap.agent?.mode ?? null}
       />
       <div className="flex flex-1 overflow-hidden">
         <KnowledgeRail

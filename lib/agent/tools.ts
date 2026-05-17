@@ -6,6 +6,7 @@ import { StorySpec } from "@/lib/elicit/schemas";
 import { PatchEnvelope } from "@/lib/viz/patch-schema";
 import { applyEnvelopes, PatchError } from "@/lib/viz/apply-patch";
 import { getSession, setSessionStory } from "@/lib/viz/session";
+import { validateStorySemantics } from "@/lib/viz/validate-semantics";
 
 const math = create(all);
 
@@ -43,6 +44,18 @@ export function makeTelepathTools(sessionId: string, sink: AgentSink): SdkMcpToo
       EMIT_STORY_SCHEMA,
       async ({ story }) => {
         const parsed = StorySpec.parse(story);
+        const semanticReason = validateStorySemantics(parsed);
+        if (semanticReason) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `Story rejected: ${semanticReason} Re-emit with a kind that can render this concept.`,
+              },
+            ],
+          };
+        }
         const entry = setSessionStory(sessionId, parsed);
         sink({ type: "story_set", story: parsed, version: entry.version });
         return {

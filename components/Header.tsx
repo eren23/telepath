@@ -11,6 +11,7 @@ type Props = {
   onOpenSourcesAction: () => void;
   sourceCount: number;
   onExportChatAction?: (format: "json" | "markdown") => void;
+  agentMode?: "claude-env" | "claude-cli" | "kimi-only" | null;
 };
 
 export default function Header({
@@ -22,6 +23,7 @@ export default function Header({
   onOpenSourcesAction,
   sourceCount,
   onExportChatAction,
+  agentMode,
 }: Props) {
   return (
     <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
@@ -67,6 +69,30 @@ export default function Header({
         >
           ⚕ Hermes Agent
         </span>
+        {agentMode ? (
+          <span
+            className={
+              "rounded-full border px-2 py-0.5 text-[11px] " +
+              (agentMode === "kimi-only"
+                ? "border-[var(--asked)]/40 bg-[var(--asked)]/10 text-[var(--asked)]"
+                : "border-[var(--accent-soft)]/40 bg-[var(--accent-soft)]/10 text-[var(--accent-soft)]")
+            }
+            title={
+              agentMode === "claude-env"
+                ? "@agent uses Claude Agent SDK authed via ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN. Kimi is the fallback."
+                : agentMode === "claude-cli"
+                  ? "@agent uses Claude Agent SDK authed via the local Claude Code CLI session. Kimi is the fallback if the SDK errors."
+                  : "Neither ANTHROPIC_API_KEY nor the Claude Code CLI is available. @agent runs in Kimi-only mode (single-shot synthesis or JSON patch, no multi-turn tool use)."
+            }
+          >
+            @agent:{" "}
+            {agentMode === "claude-env"
+              ? "Claude (env)"
+              : agentMode === "claude-cli"
+                ? "Claude (CLI)"
+                : "Kimi only"}
+          </span>
+        ) : null}
         <button
           onClick={onToggleColdAction}
           aria-pressed={cold}

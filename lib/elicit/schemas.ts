@@ -406,6 +406,47 @@ export const MarkdownSpec = z.looseObject({
 });
 export type MarkdownSpec = z.infer<typeof MarkdownSpec>;
 
+// Network (neural-net architecture) spec — proper layered viz with neurons and
+// weighted edges. Use this for autoencoders, MLPs, transformer blocks, etc.
+// Mermaid is for generic flowcharts; this kind is for "things with neurons".
+const NetworkNode = z.looseObject({
+  id: z.string(),
+  label: z.string().optional(),
+  sublabel: z.string().optional(),
+  color: z.string().optional(),
+  shape: z.enum(["circle", "square", "stack"]).optional(),
+});
+
+const NetworkLayer = z.looseObject({
+  id: z.string(),
+  label: z.string().optional(),
+  activation: z.string().optional(),
+  nodes: z.array(NetworkNode).min(1).max(64),
+});
+
+const NetworkEdge = z.looseObject({
+  from: z.string(),
+  to: z.string(),
+  weight: z.number().optional(),
+  label: z.string().optional(),
+  color: z.string().optional(),
+  style: z.enum(["solid", "dashed"]).optional(),
+});
+
+export const NetworkSpec = z.looseObject({
+  title: z.string().optional(),
+  direction: z.enum(["lr", "tb"]).default("lr"),
+  layers: z.array(NetworkLayer).min(1).max(12),
+  edges: z.array(NetworkEdge).optional(),
+  // When edges is missing or empty, default behavior between adjacent layers.
+  connect: z.enum(["full", "none"]).default("full"),
+  legend: z
+    .array(z.looseObject({ swatch: z.string(), label: z.string() }))
+    .optional(),
+  concepts: z.array(Concept).optional(),
+});
+export type NetworkSpec = z.infer<typeof NetworkSpec>;
+
 // Multi-node Story — a viz-graph the LLM can compose for richer walkthroughs.
 const NodeCommon = {
   id: z.string(),
@@ -418,6 +459,7 @@ const VizNodeInner = z.discriminatedUnion("kind", [
   z.looseObject({ ...NodeCommon, kind: z.literal("mafs"), spec: MafsSpec }),
   z.looseObject({ ...NodeCommon, kind: z.literal("katex"), spec: KatexSpec }),
   z.looseObject({ ...NodeCommon, kind: z.literal("markdown"), spec: MarkdownSpec }),
+  z.looseObject({ ...NodeCommon, kind: z.literal("network"), spec: NetworkSpec }),
 ]);
 
 const NODE_KIND_ALIASES: Record<string, string> = {
@@ -433,6 +475,11 @@ const NODE_KIND_ALIASES: Record<string, string> = {
   text: "markdown",
   md: "markdown",
   prose: "markdown",
+  neuralnet: "network",
+  neuralnetwork: "network",
+  mlp: "network",
+  net: "network",
+  architecture: "network",
 };
 
 export const VizNode = z.preprocess((v) => {

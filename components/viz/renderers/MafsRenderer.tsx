@@ -199,16 +199,18 @@ export default function MafsRenderer({ spec }: Props) {
 }
 
 function NoCurveCard({ spec }: { spec: MafsSpec }) {
+  const fmtPair = (v: unknown) =>
+    Array.isArray(v) ? (v as unknown[]).join(", ") : "?";
   const decorations = spec.elements.map((el, i) => {
     switch (el.kind) {
       case "point":
-        return `point at (${el.x}, ${el.y})${el.label ? ` — ${el.label}` : ""}`;
+        return `point at (${el.x ?? "?"}, ${el.y ?? "?"})${el.label ? ` — ${el.label}` : ""}`;
       case "vector":
-        return `vector from [${el.tail.join(", ")}] to [${el.tip.join(", ")}]${el.label ? ` — ${el.label}` : ""}`;
+        return `vector from [${fmtPair(el.tail)}] to [${fmtPair(el.tip)}]${el.label ? ` — ${el.label}` : ""}`;
       case "text":
-        return `text "${el.text}" at [${el.at.join(", ")}]`;
+        return `text "${el.text}" at [${fmtPair(el.at)}]`;
       case "latex":
-        return `latex "${el.tex}" at [${el.at.join(", ")}]`;
+        return `latex "${el.tex}" at [${fmtPair(el.at)}]`;
       default:
         return `${el.kind} element ${i}`;
     }
@@ -440,7 +442,8 @@ function renderElement(
           : safeEval(compiled.y, values).value ?? 0;
       return <Point key={key} x={x} y={y} color={color} />;
     }
-    case "vector":
+    case "vector": {
+      if (!isPair(el.tail) || !isPair(el.tip)) return null;
       return (
         <Vector
           key={key}
@@ -449,13 +452,17 @@ function renderElement(
           color={color}
         />
       );
-    case "text":
+    }
+    case "text": {
+      if (!isPair(el.at) || typeof el.text !== "string") return null;
       return (
         <Text key={key} x={el.at[0]} y={el.at[1]} color={color}>
           {el.text}
         </Text>
       );
-    case "latex":
+    }
+    case "latex": {
+      if (!isPair(el.at) || typeof el.tex !== "string") return null;
       return (
         <LaTeX
           key={key}
@@ -464,7 +471,19 @@ function renderElement(
           color={color}
         />
       );
+    }
   }
+}
+
+function isPair(v: unknown): v is [number, number] {
+  return (
+    Array.isArray(v) &&
+    v.length === 2 &&
+    typeof v[0] === "number" &&
+    Number.isFinite(v[0]) &&
+    typeof v[1] === "number" &&
+    Number.isFinite(v[1])
+  );
 }
 
 // Re-export helper type so callers don't need to dig in.

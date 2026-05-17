@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { StorySpec, VizNode } from "@/lib/elicit/schemas";
 import { ConceptProvider } from "./ConceptPopover";
+import { RenderBoundary } from "./RenderBoundary";
 
 const VegaCanvas = dynamic(
   () => import("@/components/renderers/VegaCanvas"),
@@ -21,6 +22,9 @@ const KatexNode = dynamic(() => import("./renderers/KatexNode"), {
   ssr: false,
 });
 const MarkdownNode = dynamic(() => import("./renderers/MarkdownNode"), {
+  ssr: false,
+});
+const NetworkRenderer = dynamic(() => import("./renderers/NetworkRenderer"), {
   ssr: false,
 });
 
@@ -102,7 +106,9 @@ function NodeCard({ node }: { node: VizNode }) {
           {node.title}
         </div>
       ) : null}
-      <NodeRenderer node={node} />
+      <RenderBoundary kind={node.kind}>
+        <NodeRenderer node={node} />
+      </RenderBoundary>
     </div>
   );
 }
@@ -119,5 +125,7 @@ function NodeRenderer({ node }: { node: VizNode }) {
       return <KatexNode spec={node.spec} />;
     case "markdown":
       return <MarkdownNode spec={node.spec} />;
+    case "network":
+      return <NetworkRenderer spec={node.spec} />;
   }
 }

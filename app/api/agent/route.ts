@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  prompt: z.string().min(1).max(2000),
+  prompt: z.string().min(1).max(16000),
   sessionId: z.string().min(4).max(64),
   prevStory: StorySpec.optional(),
 });
@@ -29,10 +29,19 @@ You have these MCP tools (and only these):
 Hard rules:
 - Every turn must end with exactly ONE structural mutation: either emit_story (first turn or hard pivot) or patch_story (any tweak).
 - Prefer patch_story over emit_story whenever the existing Story is mostly correct.
+- If the user's tweak does not actually change anything renderable (already done, ambiguous), DO NOT re-emit the same story. Instead, write a short plain-text reply asking for clarification, and skip the tool call. Silent re-emission frustrates the user.
 - Never narrate the JSON. Tools mutate state; don't paste the story object in chat.
 - After your last tool call, write 1-2 short plain-text sentences summarizing what changed.
 - Patches use JSON Pointers RELATIVE TO THE NODE (not the whole spec). Example: "/spec/controls/0/default" to change a control's default value of the first control in the node.
-- VizNode kinds: vega, mermaid, mafs, katex, markdown.
+- VizNode kinds: vega, mermaid, mafs, katex, markdown, network.
+- KIND SELECTION (do not get this wrong):
+  - Neural network / MLP / autoencoder / transformer block / "boxes that look like neurons with weighted connections" → **network**. Build layers of neurons with edges; supports activations, stack shapes (for feature maps), explicit edge weights for highlighting.
+  - Generic flowchart / sequence diagram / state machine / class diagram / build-pipeline / dependency graph → **mermaid**. Use this for control-flow stuff, NOT neural nets.
+  - A plottable math function or parametric curve → **mafs** with at least one functionY or parametric element. A Mafs node with only points/vectors/labels CANNOT render (the canvas refuses) — pivot to network/mermaid/katex instead.
+  - A single equation or formula → **katex**.
+  - Prose / orientation / wrap-up → **markdown**.
+  - Charts of data → **vega**.
+- Network spec shape: { direction?: "lr"|"tb", layers: [{id, label?, activation?, nodes: [{id, label?, sublabel?, color?, shape?: "circle"|"square"|"stack"}]}], edges?: [{from, to, weight?, label?, color?, style?}], connect?: "full"|"none", legend?: [{swatch,label}] }. If edges is omitted, default connect="full" draws all-to-all between adjacent layers. Use shape="stack" for "many neurons collapsed" (e.g. a feature map block in a CNN). Use explicit edges with weights to highlight just the important connections.
 - Mafs MathElement kinds: functionY, parametric, point, vector, text, latex.
   - Expressions are MATHJS strings. Use BARE functions: sin, cos, exp, log, sqrt, abs, pi, e. NEVER use "Math.exp" / "Math.cos" — that's JavaScript, mathjs rejects it. Use "^" for power, NEVER "**".
   - functionY iteration variable is "x". For time-snapshot expressions, drop "t" and just write the spatial form (e.g. "A * exp(-gamma * x) * sin(k * x)" not "A * exp(-gamma * t) * cos(k*x - omega*t)").
@@ -79,6 +88,40 @@ Good emit_story example for "explain the 1D damped wave equation":
       ]
     }}
   ]
+}
+
+Good emit_story example for "diagram a sparse autoencoder network":
+{
+  "title": "Sparse Autoencoder",
+  "nodes": [
+    {"id": "arch", "kind": "network", "spec": {
+      "title": "h → z → ĥ",
+      "direction": "lr",
+      "layers": [
+        {"id": "in", "label": "residual h", "nodes": [
+          {"id": "h1"}, {"id": "h2"}, {"id": "h3"}, {"id": "h4"}
+        ]},
+        {"id": "feat", "label": "sparse z", "activation": "ReLU", "nodes": [
+          {"id": "z1", "color": "#5eead4"},
+          {"id": "z2", "color": "#3f3f55"},
+          {"id": "z3", "color": "#5eead4"},
+          {"id": "z4", "color": "#3f3f55"},
+          {"id": "z5", "color": "#5eead4"},
+          {"id": "z6", "color": "#3f3f55"},
+          {"id": "z7", "color": "#3f3f55"},
+          {"id": "z8", "color": "#5eead4"}
+        ]},
+        {"id": "out", "label": "reconstruction ĥ", "nodes": [
+          {"id": "r1"}, {"id": "r2"}, {"id": "r3"}, {"id": "r4"}
+        ]}
+      ],
+      "connect": "full",
+      "legend": [
+        {"swatch": "#5eead4", "label": "active feature"},
+        {"swatch": "#3f3f55", "label": "inactive (sparse)"}
+      ]
+    }}
+  ]
 }`;
 
 export async function POST(req: Request) {
@@ -114,17 +157,9 @@ export async function POST(req: Request) {
         }
       };
 
-      const hasKey =
-        !!process.env.ANTHROPIC_API_KEY ||
-        !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
-
-      if (!hasKey) {
-        send("fallback_start", { reason: "no ANTHROPIC_API_KEY" });
-        await runFallback(prompt, sessionId, send, onEvent);
-        controller.close();
-        return;
-      }
-
+      // Don't pre-check env vars — the Claude Agent SDK also auths via the
+      // local Claude Code CLI session (macOS Keychain on Mac). Just let
+      // query() try; the catch below falls back to Kimi on actual failure.
       try {
         send("start", { sessionId });
         const mcp = createSdkMcpServer({
@@ -133,11 +168,12 @@ export async function POST(req: Request) {
           alwaysLoad: true,
         });
         const session = getSession(sessionId);
+        const preStoryVersion = session?.version ?? 0;
         const contextPrompt = [
           prompt,
           "",
           session?.story
-            ? `Current Story (version ${session.version}):\n${JSON.stringify(session.story).slice(0, 8000)}`
+            ? `Current Story (version ${session.version}):\n${summarizeStory(session.story)}`
             : "No Story yet — start by calling emit_story to seed one.",
         ].join("\n");
 
@@ -154,6 +190,7 @@ export async function POST(req: Request) {
               "mcp__telepath__eval_math",
             ],
             permissionMode: "bypassPermissions",
+            allowDangerouslySkipPermissions: true,
             model: process.env.CLAUDE_AGENT_MODEL ?? "claude-sonnet-4-6",
             maxTurns: 8,
           },
@@ -177,12 +214,33 @@ export async function POST(req: Request) {
         }
 
         const final = getSession(sessionId);
-        send("done", {
-          via: "claude" as const,
-          story: final?.story ?? null,
-          version: final?.version ?? 0,
-          tokens: tokenUsage || undefined,
-        });
+        if (!final?.story) {
+          // First-turn case: Claude chatted but never seeded a story. Don't
+          // hand the browser a null story — fall through to Kimi so the user
+          // still lands on something renderable.
+          send("fallback_start", {
+            reason: "claude finished without emitting a story",
+          });
+          await runFallback(prompt, sessionId, send, onEvent);
+        } else if (final.version === preStoryVersion) {
+          // Claude intentionally chose not to mutate (ambiguous tweak, etc).
+          // Keep the existing story instead of overwriting it via Kimi —
+          // Claude's text chunk already conveyed the clarifying ask.
+          send("done", {
+            via: "claude" as const,
+            story: final.story,
+            version: final.version,
+            tokens: tokenUsage || undefined,
+            unchanged: true,
+          });
+        } else {
+          send("done", {
+            via: "claude" as const,
+            story: final.story,
+            version: final.version,
+            tokens: tokenUsage || undefined,
+          });
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[agent] claude error, falling back:", err);
@@ -255,4 +313,76 @@ function extractToolCalls(
           ? (b.input as Record<string, unknown>)
           : {},
     }));
+}
+
+// Summarize the running Story for the Claude context — full JSON dumps were
+// being truncated mid-object at the old 8000-char slice, leaving Claude with
+// invalid JSON to reason about. A structured per-node digest keeps the shape
+// recognizable for patch_story pointers without blowing the context window.
+function summarizeStory(story: z.infer<typeof StorySpec>): string {
+  const lines: string[] = [];
+  if (story.title) lines.push(`title: ${truncate(story.title, 160)}`);
+  lines.push(`nodes: ${story.nodes.length}`);
+  story.nodes.forEach((node, idx) => {
+    const header = `[${idx}] id="${node.id}" kind=${node.kind}${
+      node.title ? ` title="${truncate(node.title, 80)}"` : ""
+    }`;
+    lines.push(header);
+    const detail = summarizeNode(node);
+    if (detail) lines.push(`    ${detail}`);
+  });
+  return lines.join("\n");
+}
+
+function summarizeNode(node: z.infer<typeof StorySpec>["nodes"][number]): string {
+  switch (node.kind) {
+    case "markdown":
+      return `md: ${truncate(node.spec.md ?? "", 240)}`;
+    case "katex":
+      return `tex: ${truncate(node.spec.tex ?? "", 240)}`;
+    case "mermaid": {
+      const src = node.spec.source ?? "";
+      const firstLine = src.split(/\r?\n/, 1)[0] ?? "";
+      return `mermaid: ${truncate(firstLine, 120)} (${src.length} chars)`;
+    }
+    case "vega": {
+      const spec = node.spec as Record<string, unknown>;
+      const title = typeof spec.title === "string" ? spec.title : "";
+      const mark =
+        typeof spec.mark === "string"
+          ? spec.mark
+          : (spec.mark as Record<string, unknown> | undefined)?.type;
+      const controls = Array.isArray(spec.controls)
+        ? (spec.controls as Array<{ name?: unknown }>)
+            .map((c) => (typeof c?.name === "string" ? c.name : "?"))
+            .join(",")
+        : "";
+      return `vega: mark=${String(mark ?? "?")}${title ? ` title="${truncate(title, 80)}"` : ""}${
+        controls ? ` controls=[${controls}]` : ""
+      }`;
+    }
+    case "mafs": {
+      const elems = node.spec.elements ?? [];
+      const kinds = elems.map((e) => e.kind).join(",");
+      const controls = (node.spec.controls ?? [])
+        .map((c) => c.name)
+        .filter(Boolean)
+        .join(",");
+      return `mafs: elements=[${kinds}]${controls ? ` controls=[${controls}]` : ""}`;
+    }
+    case "network": {
+      const layers = node.spec.layers
+        .map((l) => `${l.id}(${l.nodes.length}${l.activation ? `,${l.activation}` : ""})`)
+        .join("→");
+      const edgeCount = (node.spec.edges ?? []).length;
+      return `network: layers=${layers}${edgeCount ? ` edges=${edgeCount}` : ` connect=${node.spec.connect ?? "full"}`}`;
+    }
+    default:
+      return "";
+  }
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
 }

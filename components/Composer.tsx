@@ -17,6 +17,7 @@ const SUGGESTIONS = [
   "diagram our auth flow",
   "infographic of this week's wins",
   "chart commit cadence by day",
+  "@agent walk me through a damped harmonic oscillator",
 ];
 
 export default function Composer({
@@ -93,8 +94,8 @@ export default function Composer({
           rows={2}
           placeholder={
             phase === "rendered"
-              ? "Refine this — or ask for something new.  (⌘↵)"
-              : "What do you want to see?  (⌘↵ to send)"
+              ? "Refine this — or ask for something new.  (⌘↵ · @agent for a viz-graph)"
+              : "What do you want to see?  (⌘↵ to send · prefix with @agent for a multi-node viz-graph)"
           }
           className="flex-1 resize-none rounded-xl border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3 text-[14px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-[var(--accent-soft)]"
           disabled={phase === "thinking" || phase === "rendering"}
